@@ -1,0 +1,11 @@
+# Keep line endings consistent between Windows and the Linux boxes that build on Vercel.
+* text=auto eol=lf
+
+*.png binary
+*.wasm binary
+*.jks binary
+*.keystore binary
+*.apk binary
+*.pdf binary
+gradlew text eol=lf
+*.bat text eol=crlf

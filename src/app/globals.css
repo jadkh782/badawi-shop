@@ -1,0 +1,242 @@
+@import 'tailwindcss';
+
+/*
+  Badawi Shop.
+
+  A warm near-black rather than a blue-black: the shop at night, not a dashboard. The two
+  modes carry their own colour so a glance at the top of the screen tells you whether you are
+  selling or stocking, which matters when the phone is in one hand and a crate in the other.
+*/
+@theme {
+  --color-ink: #14110f;
+  --color-ink-raised: #201b18;
+  --color-ink-high: #2b2320;
+  --color-line: #3a302b;
+  --color-paper: #f5efe6;
+  --color-muted: #a2938a;
+  --color-faint: #6f625b;
+
+  --color-sell: #ffb020;
+  --color-sell-dim: #4a3413;
+  --color-stock: #5ac8e8;
+  --color-stock-dim: #123845;
+  --color-danger: #ff6b5a;
+  --color-danger-dim: #4a1f1a;
+  --color-gain: #7be0a8;
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 18px;
+}
+
+@layer base {
+  html {
+    background: var(--color-ink);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-sans);
+    /* The till is a fixed surface, not a document: stop the page rubber-banding under it. */
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Money and counts are the content of this app, so they never reflow as digits change. */
+  .tnum {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /*
+    16px is the threshold below which iOS zooms the page when a field takes focus, which on a
+    till reads as the screen lurching every time you touch a price.
+  */
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    font-size: max(16px, 1em);
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-sell);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Every tappable thing clears 48px, because this is used one-handed at a counter. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 font-semibold;
+    min-height: 52px;
+    transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active {
+    transform: scale(0.97);
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .btn-sell {
+    background: var(--color-sell);
+    color: #1a1206;
+  }
+  .btn-stock {
+    background: var(--color-stock);
+    color: #06222b;
+  }
+  .btn-ghost {
+    background: var(--color-ink-raised);
+    color: var(--color-paper);
+    border: 1px solid var(--color-line);
+  }
+  .btn-danger {
+    background: var(--color-danger-dim);
+    color: var(--color-danger);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+  }
+
+  .card {
+    background: var(--color-ink-raised);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+  }
+
+  /* Small wide-tracked labels. They name a value; they never carry the value themselves. */
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase;
+    letter-spacing: 0.14em;
+    color: var(--color-faint);
+  }
+
+  .field {
+    @apply w-full rounded-2xl px-4 py-3;
+    background: var(--color-ink);
+    border: 1px solid var(--color-line);
+    color: var(--color-paper);
+    min-height: 52px;
+  }
+  .field::placeholder {
+    color: var(--color-faint);
+  }
+  .field:focus {
+    border-color: var(--color-sell);
+    outline: none;
+  }
+
+  .chip {
+    @apply inline-flex shrink-0 items-center gap-2 rounded-full px-4 text-sm font-semibold;
+    min-height: 44px;
+    background: var(--color-ink-raised);
+    border: 1px solid var(--color-line);
+    color: var(--color-muted);
+    touch-action: manipulation;
+  }
+  .chip[data-active='true'] {
+    background: var(--color-paper);
+    border-color: var(--color-paper);
+    color: var(--color-ink);
+  }
+
+  /* Horizontal strips scroll rather than wrap, so the row height never jumps. */
+  .strip {
+    @apply flex gap-2 overflow-x-auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+  }
+  .strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+/* The scan sweep: one line travelling the viewfinder, nothing else moving. */
+@keyframes sweep {
+  0% {
+    transform: translateY(-42%);
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(42%);
+    opacity: 0;
+  }
+}
+
+@keyframes flash {
+  from {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/*
+  Native scanning (Android app only).
+
+  ML Kit puts the camera preview behind the WebView rather than in a video element. That means
+  every layer the app paints - the page background, the shell, a card - sits on top of the
+  camera and hides it. Clearing html and body is not enough on its own, which is exactly how
+  the first version of this ended up scanning correctly while showing nothing at all.
+
+  So the whole app is hidden for the duration, and the scanner overlay, which renders through
+  a portal onto the body and is therefore outside it, keeps drawing on top of the preview.
+  visibility rather than display, so nothing reflows and the page does not lose its scroll
+  position when the scan ends.
+*/
+html.native-scanning,
+html.native-scanning body {
+  background: transparent !important;
+}
+
+html.native-scanning [data-app-root] {
+  visibility: hidden !important;
+}
+
+html.native-scanning [data-scanner-backdrop] {
+  background: transparent !important;
+}
