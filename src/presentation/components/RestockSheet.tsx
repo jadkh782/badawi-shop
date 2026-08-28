@@ -201,10 +201,12 @@ export function RestockSheet({
           </div>
 
           {shortfall && budget && (
-            <p className="mt-2 rounded-xl bg-[var(--color-danger-dim)] px-3 py-2 text-xs font-medium leading-relaxed text-[var(--color-danger)]">
-              The shop only has {budget.balance.format()}. This will take the budget to{' '}
-              {budget.balance.subtract(deliveryCost).format()}. Choose <b>My own money</b> if you
-              are paying for it yourself.
+            <p
+              className="mt-2 rounded-xl bg-[var(--color-danger-dim)] px-3 py-2 text-xs font-medium leading-relaxed text-[var(--color-danger)]"
+              role="alert"
+            >
+              The shop has {budget.balance.format()} and this costs {deliveryCost.format()}.
+              Pay for it yourself with <b>My own money</b>, or order less.
             </p>
           )}
 
@@ -228,10 +230,18 @@ export function RestockSheet({
       <button
         type="button"
         className="btn btn-stock mb-2 mt-4 w-full"
-        disabled={busy || !valid || result < 0 || delta === 0}
+        // The shop cannot spend money it does not have. Paying from your own pocket is the
+        // way through, so the button stays shut until one or the other is true.
+        disabled={busy || !valid || result < 0 || delta === 0 || shortfall}
         onClick={() => void apply()}
       >
-        {busy ? 'Saving...' : mode === 'restock' ? 'Add to stock' : 'Correct the count'}
+        {busy
+          ? 'Saving...'
+          : shortfall
+            ? 'Not enough in the budget'
+            : mode === 'restock'
+              ? 'Add to stock'
+              : 'Correct the count'}
       </button>
     </Sheet>
   );

@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
-    "test:db": "node supabase/tests/schema.test.mjs && node supabase/tests/schema-once.test.mjs",
+    "test:db": "node supabase/tests/sql-lint.test.mjs && node supabase/tests/schema.test.mjs && node supabase/tests/schema-once.test.mjs",
     "test:all": "npm run test && npm run test:db",
     "sync:wasm": "node -e \"require('fs').copyFileSync('node_modules/zxing-wasm/dist/reader/zxing_reader.wasm','public/zxing_reader.wasm')\"",
     "prebuild": "npm run sync:wasm",

@@ -36,14 +36,24 @@ begin
     'categories', (select count(*) from public.categories)
   ) into v_counts;
 
-  -- Order matters only for stock_movements, whose sale_id is ON DELETE SET NULL rather than
-  -- cascade; the rest fall away with their parents.
-  delete from public.cash_movements;
-  delete from public.stock_movements;
-  delete from public.sale_items;
-  delete from public.sales;
-  delete from public.products;
-  delete from public.categories;
+  /*
+    Every one of these carries `where true`, which looks redundant and is not.
+
+    Supabase preloads the safeupdate extension, which refuses any DELETE or UPDATE without a
+    WHERE clause so that a mistyped statement cannot empty a table. A plain Postgres does not,
+    which is how this shipped passing every local test and then failed in the shop with
+    "DELETE requires a WHERE clause". The guard is worth keeping; this really does mean to
+    empty the table, so it says so out loud rather than by omission.
+
+    Order matters only for stock_movements, whose sale_id is ON DELETE SET NULL rather than
+    cascade; the rest fall away with their parents.
+  */
+  delete from public.cash_movements  where true;
+  delete from public.stock_movements where true;
+  delete from public.sale_items      where true;
+  delete from public.sales           where true;
+  delete from public.products        where true;
+  delete from public.categories      where true;
 
   return v_counts;
 end;
