@@ -5,6 +5,8 @@ import {
   DateRange,
   LowStockItem,
   Money,
+  BudgetSummary,
+  CashMovement,
   Product,
   ProductSalesStat,
   Quantity,
@@ -15,6 +17,7 @@ import {
   TimeSeriesPoint,
   ExchangeRate,
 } from '@/domain';
+import type { CashKind } from '@/domain';
 import type {
   CategoryDraft,
   CheckoutRequest,
@@ -27,6 +30,10 @@ import type {
   ProductDraft,
   ProductQuery,
   ShopUser,
+  StockChange,
+  IBudgetRepository,
+  IShopReset,
+  ResetCounts,
 } from '@/application/ports';
 import { InMemoryStore } from './InMemoryStore';
 
@@ -72,12 +79,29 @@ export class DemoProductRepository implements IProductRepository {
     store().products = store().products.filter((p) => p.id !== id);
   }
 
-  async adjustStock(id: string, delta: number): Promise<number> {
+  async adjustStock(id: string, change: StockChange): Promise<number> {
     const existing = store().products.find((p) => p.id === id);
     if (!existing) throw new Error('That product no longer exists');
-    const next = existing.stock.value + delta;
+
+    const next = existing.stock.value + change.delta;
     if (next < 0) throw new Error(`That would leave "${existing.name}" below zero`);
     store().replaceProduct(store().withStock(existing, next));
+
+    // Same money rules as the database, so the demo teaches the real behaviour.
+    if (change.reason === 'restock' && change.delta > 0) {
+      const cost =
+        change.costCents !== undefined
+          ? Money.fromCents(change.costCents)
+          : existing.costPrice.multiply(change.delta);
+
+      if (!cost.isZero()) {
+        if (change.funding === 'outside') {
+          store().recordCash('investment', cost, existing.name, change.note ?? null);
+        }
+        store().recordCash('restock', Money.zero().subtract(cost), existing.name, change.note ?? null);
+      }
+    }
+
     return next;
   }
 }
@@ -174,5 +198,50 @@ export class DemoAuthService implements IAuthService {
 
   async currentUser(): Promise<ShopUser | null> {
     return DemoAuthService.USER;
+  }
+}
+
+/** The demo cash box, reading from the same in-memory ledger the sales write to. */
+export class DemoBudgetRepository implements IBudgetRepository {
+  async summary(): Promise<BudgetSummary> {
+    const cash = store().cash;
+    const of = (kind: CashKind) =>
+      Money.sum(cash.filter((m) => m.kind === kind).map((m) => m.amount));
+
+    const spent = of('restock');
+    return new BudgetSummary(
+      Money.sum(cash.map((m) => m.amount)),
+      of('sale'),
+      // Stored negative; shown as the amount that went out.
+      Money.zero().subtract(spent),
+      of('investment'),
+      cash.length,
+    );
+  }
+
+  async movements(limit = 100): Promise<CashMovement[]> {
+    return [...store().cash]
+      .sort((a, b) => b.at.getTime() - a.at.getTime())
+      .slice(0, limit);
+  }
+}
+
+/** Resetting the demo shop just empties the store; reopening the app reseeds it. */
+export class DemoShopReset implements IShopReset {
+  async reset(): Promise<ResetCounts> {
+    const s = store();
+    const counts: ResetCounts = {
+      sales: s.sales.length,
+      saleItems: s.sales.reduce((n, sale) => n + sale.items.length, 0),
+      stockMovements: 0,
+      cashMovements: s.cash.length,
+      products: s.products.length,
+      categories: s.categories.length,
+    };
+    s.sales = [];
+    s.cash = [];
+    s.products = [];
+    s.categories = [];
+    return counts;
   }
 }

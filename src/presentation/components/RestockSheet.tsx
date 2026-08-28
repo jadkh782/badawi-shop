@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { Product } from '@/domain';
+import { BudgetSummary, Money, type Product } from '@/domain';
+import type { RestockFunding } from '@/application/ports';
 import { container } from '@/container';
 import { messageFor } from '@/infrastructure/supabase/errors';
 import { useToast } from '@/presentation/providers/ToastProvider';
@@ -31,14 +32,24 @@ export function RestockSheet({
   const [mode, setMode] = useState<'restock' | 'adjustment'>('restock');
   const [raw, setRaw] = useState('');
   const [note, setNote] = useState('');
+  const [cost, setCost] = useState('');
+  const [funding, setFunding] = useState<RestockFunding>('budget');
+  const [budget, setBudget] = useState<BudgetSummary | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setMode('restock');
-      setRaw('');
-      setNote('');
-    }
+    if (!open) return;
+    setMode('restock');
+    setRaw('');
+    setNote('');
+    setCost('');
+    setFunding('budget');
+    // What is in the cash box decides whether this delivery can be paid for out of it, so it
+    // belongs on this screen rather than one the shop has to go and look at first.
+    void container()
+      .getBudget.execute(0)
+      .then((view) => setBudget(view.summary))
+      .catch(() => setBudget(null));
   }, [open]);
 
   const entered = Number(raw.replace(',', '.'));
@@ -46,11 +57,32 @@ export function RestockSheet({
   const current = product.stock.value;
   const result = mode === 'restock' ? current + entered : entered;
   const delta = mode === 'restock' ? entered : entered - current;
+  const isDelivery = mode === 'restock' && entered > 0;
+
+  // Left blank, a delivery is priced at what the article costs. Typing a figure overrides it,
+  // because the supplier's price on the day is what actually left the till.
+  const typedCost = cost.trim();
+  const deliveryCost = !isDelivery
+    ? Money.zero()
+    : typedCost
+      ? Money.fromInput(typedCost)
+      : product.costPrice.multiply(entered);
+
+  const paysFromBudget = isDelivery && funding === 'budget';
+  const shortfall =
+    paysFromBudget && budget ? !budget.canAfford(deliveryCost) : false;
 
   async function apply() {
     setBusy(true);
     try {
-      await container().restockProduct.execute(product.id, delta, mode, note.trim() || undefined);
+      await container().restockProduct.execute({
+        productId: product.id,
+        delta,
+        reason: mode,
+        cost: typedCost || undefined,
+        funding,
+        note: note.trim() || undefined,
+      });
       notify(
         mode === 'restock'
           ? `Added ${entered} ${product.unit} of ${product.name}`
@@ -130,12 +162,67 @@ export function RestockSheet({
         </p>
       )}
 
+      {isDelivery && (
+        <div className="mt-4 border-t border-[var(--color-line)] pt-4">
+          <label className="eyebrow" htmlFor="cost">
+            What the delivery cost
+          </label>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="text-lg font-semibold text-[var(--color-faint)]">$</span>
+            <input
+              id="cost"
+              value={cost}
+              onChange={(event) => setCost(event.target.value)}
+              inputMode="decimal"
+              placeholder={product.costPrice.multiply(entered).format().replace('$', '')}
+              className="field flex-1"
+            />
+          </div>
+          <p className="mt-1.5 text-xs text-[var(--color-faint)]">
+            {typedCost
+              ? `Paying ${deliveryCost.format()} for ${entered} ${product.unit}`
+              : `Left blank this is ${deliveryCost.format()}, at the cost price on the article`}
+          </p>
+
+          <p className="eyebrow mt-4">Paid for with</p>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <FundingChoice
+              label="Shop money"
+              detail={budget ? `${budget.balance.format()} available` : 'Loading...'}
+              selected={funding === 'budget'}
+              onSelect={() => setFunding('budget')}
+            />
+            <FundingChoice
+              label="My own money"
+              detail="Recorded as put in"
+              selected={funding === 'outside'}
+              onSelect={() => setFunding('outside')}
+            />
+          </div>
+
+          {shortfall && budget && (
+            <p className="mt-2 rounded-xl bg-[var(--color-danger-dim)] px-3 py-2 text-xs font-medium leading-relaxed text-[var(--color-danger)]">
+              The shop only has {budget.balance.format()}. This will take the budget to{' '}
+              {budget.balance.subtract(deliveryCost).format()}. Choose <b>My own money</b> if you
+              are paying for it yourself.
+            </p>
+          )}
+
+          {funding === 'outside' && (
+            <p className="mt-2 text-xs leading-relaxed text-[var(--color-faint)]">
+              The budget stays where it is, and {deliveryCost.format()} is recorded as money you
+              put in from outside.
+            </p>
+          )}
+        </div>
+      )}
+
       <input
         value={note}
         onChange={(event) => setNote(event.target.value)}
         placeholder={mode === 'restock' ? 'Supplier or invoice (optional)' : 'Why (optional)'}
         aria-label="Note"
-        className="field mt-3"
+        className="field mt-4"
       />
 
       <button
@@ -152,4 +239,32 @@ export function RestockSheet({
 
 function formatStock(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, '');
+}
+
+function FundingChoice({
+  label,
+  detail,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  detail: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className="min-h-16 rounded-2xl border px-3 py-2 text-left"
+      style={{
+        borderColor: selected ? 'var(--color-stock)' : 'var(--color-line)',
+        background: selected ? 'var(--color-stock-dim)' : 'transparent',
+      }}
+    >
+      <span className="block text-sm font-semibold">{label}</span>
+      <span className="tnum mt-0.5 block text-xs text-[var(--color-faint)]">{detail}</span>
+    </button>
+  );
 }

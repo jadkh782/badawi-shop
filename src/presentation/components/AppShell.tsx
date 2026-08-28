@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSettings } from '@/presentation/providers/SettingsProvider';
-import { BackIcon, CartIcon, BoxIcon, ChartIcon, GearIcon } from './Icons';
+import { BackIcon, CartIcon, BoxIcon, ChartIcon, GearIcon, WalletIcon } from './Icons';
 import { DemoBanner } from './DemoBanner';
 
 export type Mode = 'sell' | 'stock' | 'neutral';
@@ -17,6 +17,7 @@ const ACCENT: Record<Mode, string> = {
 const NAV = [
   { href: '/sell', label: 'Sell', icon: CartIcon, accent: 'var(--color-sell)' },
   { href: '/inventory', label: 'Inventory', icon: BoxIcon, accent: 'var(--color-stock)' },
+  { href: '/budget', label: 'Budget', icon: WalletIcon, accent: 'var(--color-sell)' },
   { href: '/reports', label: 'Reports', icon: ChartIcon, accent: 'var(--color-paper)' },
 ];
 

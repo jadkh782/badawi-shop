@@ -1,6 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Barcode, DuplicateBarcodeError, type Product } from '@/domain';
-import type { IProductRepository, ProductDraft, ProductQuery } from '@/application/ports';
+import type {
+  IProductRepository,
+  ProductDraft,
+  ProductQuery,
+  StockChange,
+} from '@/application/ports';
 import { toProduct } from './mappers/toDomain';
 import type { ProductRow } from './types';
 import { translateError } from './errors';
@@ -80,17 +85,16 @@ export class SupabaseProductRepository implements IProductRepository {
     if (error) throw translateError(error);
   }
 
-  async adjustStock(
-    id: string,
-    delta: number,
-    reason: 'restock' | 'adjustment',
-    note?: string,
-  ): Promise<number> {
+  async adjustStock(id: string, change: StockChange): Promise<number> {
     const { data, error } = await this.db.rpc('adjust_stock', {
       p_product_id: id,
-      p_delta: delta,
-      p_reason: reason,
-      p_note: note ?? null,
+      p_delta: change.delta,
+      p_reason: change.reason,
+      p_note: change.note ?? null,
+      // Null lets the database price the delivery from the article's own cost, which is the
+      // right answer whenever the supplier charged what they usually do.
+      p_cost_cents: change.costCents ?? null,
+      p_funding: change.funding ?? 'budget',
     });
     if (error) throw translateError(error);
     return Number(data);

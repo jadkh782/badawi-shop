@@ -327,6 +327,88 @@ check('a 23:30 sale is counted on the Beirut day it was rung up on',
 check('the late sale contributes its value to that day',
   Number(beirutDay[0].sales_cents) >= 50, JSON.stringify(beirutDay));
 
+// --- the cash box ----------------------------------------------------------
+console.log('\nbudget');
+
+const budget = () => one('select * from report_budget()');
+
+/*
+  Measured as differences rather than absolutes. Restocking earlier in this file already moved
+  money, and pinning these to fixed totals would make them fail whenever a test above is added
+  or reordered, for no reason connected to the thing being checked.
+*/
+const box0 = await budget();
+const salesTotal = Number((await one('select sum(total_cents) s from sales')).s);
+eq('every sale so far is in the box', box0.from_sales_cents, salesTotal);
+check('the balance is the takings, less what was spent, plus what was put in',
+  Number(box0.balance_cents) ===
+    Number(box0.from_sales_cents) - Number(box0.spent_restock_cents) + Number(box0.invested_cents),
+  JSON.stringify(box0));
+
+await db.query(`select adjust_stock($1, 10, 'restock', 'shop paid', 500, 'budget')`, [cola.id]);
+const paid = await budget();
+eq('a delivery the shop paid for leaves the box',
+  Number(paid.spent_restock_cents) - Number(box0.spent_restock_cents), 500);
+eq('and the balance drops by exactly that',
+  Number(box0.balance_cents) - Number(paid.balance_cents), 500);
+eq('it is not counted as money from outside', paid.invested_cents, box0.invested_cents);
+
+await db.query(`select adjust_stock($1, 10, 'restock', 'owner paid', 800, 'outside')`, [cola.id]);
+const outside = await budget();
+eq('an outside-funded delivery still counts as money spent',
+  Number(outside.spent_restock_cents) - Number(paid.spent_restock_cents), 800);
+eq('and is recorded as money put in from outside',
+  Number(outside.invested_cents) - Number(paid.invested_cents), 800);
+eq('but leaves the balance exactly where it was', outside.balance_cents, paid.balance_cents);
+
+const colaCost = Number((await one('select cost_price_cents c from products where id = $1', [cola.id])).c);
+await db.query(`select adjust_stock($1, 5, 'restock', null)`, [cola.id]);
+eq('an unpriced delivery falls back to the cost price',
+  Number((await budget()).spent_restock_cents) - Number(outside.spent_restock_cents), colaCost * 5);
+
+const beforeCount = await budget();
+await db.query(`select adjust_stock($1, -3, 'adjustment', 'miscount')`, [cola.id]);
+eq('correcting a miscount does not touch the money',
+  (await budget()).balance_cents, beforeCount.balance_cents);
+
+await expectError('an unknown funding source is refused', '22023', () =>
+  db.query(`select adjust_stock($1, 1, 'restock', null, 100, 'magic')`, [cola.id]));
+await expectError('a delivery cannot cost a negative amount', '22023', () =>
+  db.query(`select adjust_stock($1, 1, 'restock', null, -5, 'budget')`, [cola.id]));
+
+const beforeFail = await budget();
+await expectError('overselling is still refused', 'BS001', () =>
+  db.query(`select checkout_sale($1::jsonb, 'none', 0, 'USD', null)`,
+    [JSON.stringify([{ product_id: chips.id, quantity: 9999 }])]));
+eq('and the refused sale added nothing to the box',
+  (await budget()).balance_cents, beforeFail.balance_cents);
+
+const ledger = await all('select * from list_cash_movements(500)');
+const ledgerSum = ledger.reduce((n, r) => n + Number(r.amount_cents), 0);
+eq('the ledger accounts for the balance exactly', ledgerSum, (await budget()).balance_cents);
+check('the ledger reads newest first',
+  ledger.every((r, i) => i === 0 || new Date(ledger[i - 1].created_at) >= new Date(r.created_at)));
+
+// --- reset -----------------------------------------------------------------
+console.log('\nreset');
+
+await expectError('reset refuses without the confirmation word', '22023', () =>
+  db.query(`select reset_shop('yes')`));
+await expectError('reset refuses an empty confirmation', '22023', () =>
+  db.query(`select reset_shop(null)`));
+check('nothing was deleted by the refused attempts',
+  Number((await one('select count(*) c from sales')).c) > 0);
+
+const removed = await one(`select reset_shop('RESET') as counts`);
+check('reset reports what it removed', Number(removed.counts.sales) > 0, JSON.stringify(removed.counts));
+
+for (const table of ['sales', 'sale_items', 'stock_movements', 'cash_movements', 'products', 'categories']) {
+  eq(`${table} is empty afterwards`, (await one(`select count(*) c from ${table}`)).c, 0);
+}
+eq('the settings row survives, so the rate need not be typed back in',
+  (await one('select count(*) c from app_settings')).c, 1);
+eq('and the budget reads as a fresh shop', (await budget()).balance_cents, 0);
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 if (failures.length) {
   console.log('\nFailures:\n' + failures.map((f) => '  - ' + f).join('\n'));

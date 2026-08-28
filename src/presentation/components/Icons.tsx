@@ -100,3 +100,14 @@ export const CloseIcon = ({ className = base }: Props) => (
     </g>
   </svg>
 );
+
+/** The cash box. A purse rather than a coin, so it reads at 20px. */
+export function WalletIcon({ className = 'h-6 w-6' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a2 2 0 0 1 2 2v1" />
+      <path d="M3 7.5V17a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2" />
+      <path d="M21 9v6h-4a3 3 0 0 1 0-6h4Z" />
+    </svg>
+  );
+}

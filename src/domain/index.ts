@@ -18,6 +18,8 @@ export * from './discounts';
 export * from './errors';
 
 export { SalesSummary } from './reports/SalesSummary';
+export { BudgetSummary, CashMovement } from './reports/Budget';
+export type { CashKind } from './reports/Budget';
 export {
   ProductSalesStat,
   TimeSeriesPoint,

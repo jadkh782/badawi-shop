@@ -19,6 +19,7 @@ import {
 import { AppShell } from '@/presentation/components/AppShell';
 import { Sheet } from '@/presentation/components/Sheet';
 import { PinPad } from '@/presentation/components/PinPad';
+import { ResetSheet } from '@/presentation/components/ResetSheet';
 
 const SAMPLE = Money.fromDollars(1);
 
@@ -32,6 +33,7 @@ export default function SettingsPage() {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [lockOn, setLockOn] = useState(false);
   const [custom, setCustom] = useState(false);
 
@@ -228,6 +230,24 @@ export default function SettingsPage() {
           </section>
 
           <section className="card p-4">
+            <p className="eyebrow" style={{ color: 'var(--color-danger)' }}>
+              Start again
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
+              Empties the shop completely: every sale, the budget, every article and every
+              category. Use it once, when you are done testing and ready to trade for real.
+            </p>
+            <button
+              type="button"
+              className="btn btn-ghost mt-3 w-full"
+              style={{ color: 'var(--color-danger)' }}
+              onClick={() => setResetOpen(true)}
+            >
+              Reset everything
+            </button>
+          </section>
+
+          <section className="card p-4">
             <p className="eyebrow">Connection</p>
             <p className="mt-1 truncate text-sm font-semibold">{user?.email ?? 'connecting...'}</p>
             <p className="mt-2 text-xs leading-relaxed text-[var(--color-faint)]">
@@ -259,6 +279,16 @@ export default function SettingsPage() {
           />
         </div>
       </Sheet>
+
+      <ResetSheet
+        open={resetOpen}
+        onClose={() => setResetOpen(false)}
+        onDone={() => {
+          setResetOpen(false);
+          // Everything on screen is now stale, and a fresh load is the honest way to show it.
+          window.location.href = '/';
+        }}
+      />
     </>
   );
 }

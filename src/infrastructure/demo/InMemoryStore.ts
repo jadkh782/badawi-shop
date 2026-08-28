@@ -17,7 +17,9 @@ import {
   SalesSummary,
   ShopSettings,
   TimeSeriesPoint,
+  CashMovement,
 } from '@/domain';
+import type { CashKind } from '@/domain';
 import { DEMO_CATEGORIES, demoProducts } from './DemoData';
 
 /**
@@ -31,11 +33,19 @@ import { DEMO_CATEGORIES, demoProducts } from './DemoData';
  * Nothing here survives a reload, which is exactly what a demo should do.
  */
 export class InMemoryStore {
+  /** Mirrors what cash_movements does in Postgres, so the budget screen behaves the same. */
+  recordCash(kind: CashKind, amount: Money, productName: string | null, note: string | null = null): void {
+    this.cash.push(
+      new CashMovement(this.nextId('cash'), kind, amount, productName, note, new Date()),
+    );
+  }
+
   private static shared: InMemoryStore | null = null;
 
   categories: Category[] = [...DEMO_CATEGORIES];
   products: Product[] = demoProducts();
   sales: Sale[] = [];
+  cash: CashMovement[] = [];
   settings = new ShopSettings('Badawi Shop (demo)', ExchangeRate.create(89000, 1000), new Date());
 
   private counter = 0;
@@ -134,6 +144,7 @@ export class InMemoryStore {
     const total = subtotal.subtract(discount).clampToZero();
     const id = this.nextId('sale');
 
+    this.recordCash('sale', total, null);
     this.sales.push(
       new Sale(
         id,

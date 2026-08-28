@@ -106,10 +106,15 @@ export default function HomePage() {
         </p>
       </section>
 
-      <Link href="/reports" className="btn btn-ghost mt-auto w-full lg:mt-0">
-        <ChartIcon className="h-5 w-5" />
-        Reports and export
-      </Link>
+      <div className="mt-auto grid grid-cols-2 gap-2 lg:mt-0">
+        <Link href="/budget" className="btn btn-ghost w-full">
+          Budget
+        </Link>
+        <Link href="/reports" className="btn btn-ghost w-full">
+          <ChartIcon className="h-5 w-5" />
+          Reports
+        </Link>
+      </div>
       </div>
     </main>
   );

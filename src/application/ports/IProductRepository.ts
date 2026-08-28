@@ -32,13 +32,32 @@ export interface ProductDraft {
   notes: string | null;
 }
 
+/** Where the money for a delivery came from. */
+export type RestockFunding = 'budget' | 'outside';
+
+export interface StockChange {
+  delta: number;
+  reason: 'restock' | 'adjustment';
+  note?: string;
+  /**
+   * What the delivery cost, in cents. Left out, it is priced at the article's cost price.
+   * Only a delivery costs anything; correcting a miscount never does.
+   */
+  costCents?: number;
+  /** `outside` means the owner paid, so the balance is left alone. */
+  funding?: RestockFunding;
+}
+
 /** Write access, used only by Inventory mode. */
 export interface IProductWriter {
   create(draft: ProductDraft): Promise<Product>;
   update(id: string, draft: ProductDraft): Promise<Product>;
   archive(id: string): Promise<void>;
-  /** Moves stock and writes the ledger entry in one transaction. Returns the new level. */
-  adjustStock(id: string, delta: number, reason: 'restock' | 'adjustment', note?: string): Promise<number>;
+  /**
+   * Moves stock, writes the ledger entry and moves the money, all in one transaction.
+   * Returns the new stock level.
+   */
+  adjustStock(id: string, change: StockChange): Promise<number>;
 }
 
 export interface IProductRepository extends IProductReader, IProductWriter {}

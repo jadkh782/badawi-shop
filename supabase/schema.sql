@@ -830,3 +830,425 @@ grant select on public.sale_line_facts to authenticated;
 revoke all on all tables in schema public from anon;
 revoke all on all sequences in schema public from anon;
 revoke all on all functions in schema public from anon;
+
+
+-- ==========================================================================
+-- 20260828090000_cash_ledger.sql
+-- ==========================================================================
+-- ---------------------------------------------------------------------------
+-- cash_movements: where the shop's money went.
+--
+-- A running cash box. Takings go in, restocking takes out, and the balance is what is
+-- available to spend on the next delivery.
+--
+-- Sales add the full amount the customer paid, not the profit on it. That sounds wrong until
+-- you follow one item through: sell for $100 having paid $60, then buy another for $60. Add
+-- the takings and subtract the purchase and the box holds $40, which is the profit. Add only
+-- the profit and subtract the purchase and it holds -$20, having charged the $60 twice.
+--
+-- Amounts are signed: positive is money in, negative is money out. The balance is their sum,
+-- so it can always be explained by listing the rows that made it.
+--
+-- Everything is in USD cents like the rest of the system, whichever currency was handed over.
+-- ---------------------------------------------------------------------------
+create table if not exists public.cash_movements (
+  id            uuid primary key default gen_random_uuid(),
+  kind          text        not null check (kind in ('sale', 'restock', 'investment')),
+  amount_cents  bigint      not null,
+  sale_id       uuid        references public.sales (id) on delete cascade,
+  product_id    uuid        references public.products (id) on delete set null,
+  product_name  text,
+  note          text,
+  created_by    uuid        references auth.users (id) on delete set null,
+  created_at    timestamptz not null default now(),
+
+  -- Money in is positive, money out is negative. Nothing else makes sense per kind.
+  constraint cash_direction check (
+    (kind = 'sale'       and amount_cents >= 0) or
+    (kind = 'investment' and amount_cents >= 0) or
+    (kind = 'restock'    and amount_cents <= 0)
+  )
+);
+
+create index if not exists cash_movements_created_idx
+  on public.cash_movements (created_at desc);
+
+alter table public.cash_movements enable row level security;
+
+drop policy if exists cash_movements_read on public.cash_movements;
+create policy cash_movements_read on public.cash_movements
+  for select to authenticated using (true);
+
+-- Written only by checkout_sale and adjust_stock, both of which run as the owner, so the
+-- balance can never be moved by a device posting a figure of its own.
+revoke all on public.cash_movements from authenticated;
+grant select on public.cash_movements to authenticated;
+revoke all on public.cash_movements from anon;
+
+
+-- ==========================================================================
+-- 20260828090100_checkout_cash.sql
+-- ==========================================================================
+-- ---------------------------------------------------------------------------
+-- checkout_sale, now also putting the takings in the cash box.
+--
+-- Identical to before except for the one insert at the end. It stays inside the same
+-- transaction as the sale, so the books and the cash box can never disagree: if the sale is
+-- rolled back for want of stock, the money never went in either.
+-- ---------------------------------------------------------------------------
+create or replace function public.checkout_sale(
+  p_items            jsonb,
+  p_discount_type    text default 'none',
+  p_discount_value   numeric default 0,
+  p_payment_currency text default 'USD',
+  p_note             text default null
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_sale_id        uuid := gen_random_uuid();
+  v_settings       public.app_settings%rowtype;
+  v_line           record;
+  v_product        record;
+  v_subtotal       bigint := 0;
+  v_cost           bigint := 0;
+  v_items          numeric := 0;
+  v_line_total     bigint;
+  v_line_cost      bigint;
+  v_discount_cents bigint := 0;
+  v_total          bigint;
+  v_total_lbp      numeric;
+begin
+  if auth.uid() is null then
+    raise exception 'You must be signed in to take a sale' using errcode = '42501';
+  end if;
+
+  if p_items is null or jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'Cannot check out an empty cart' using errcode = '22023';
+  end if;
+
+  if p_discount_type not in ('none', 'percent', 'amount') then
+    raise exception 'Unknown discount type %', p_discount_type using errcode = '22023';
+  end if;
+
+  if p_payment_currency not in ('USD', 'LBP') then
+    raise exception 'Unknown payment currency %', p_payment_currency using errcode = '22023';
+  end if;
+
+  select * into v_settings from public.app_settings where id = 1;
+
+  insert into public.sales (id, payment_currency, discount_type, discount_value, note,
+                            usd_to_lbp_rate, created_by)
+  values (v_sale_id, p_payment_currency, p_discount_type, greatest(coalesce(p_discount_value, 0), 0),
+          nullif(btrim(coalesce(p_note, '')), ''), v_settings.usd_to_lbp_rate, auth.uid());
+
+  for v_line in
+    select (elem ->> 'product_id')::uuid as product_id,
+           sum((elem ->> 'quantity')::numeric) as quantity
+    from jsonb_array_elements(p_items) as elem
+    group by 1
+    order by 1
+  loop
+    if v_line.quantity is null or v_line.quantity <= 0 then
+      raise exception 'Quantity must be greater than zero' using errcode = '22023';
+    end if;
+
+    select p.*, c.name as category_name
+      into v_product
+      from public.products p
+      left join public.categories c on c.id = p.category_id
+     where p.id = v_line.product_id
+     for update of p;
+
+    if not found then
+      raise exception 'That product no longer exists' using errcode = '23503';
+    end if;
+
+    if v_product.quantity_in_stock < v_line.quantity then
+      raise exception 'Only % % of "%" left in stock, % requested',
+        v_product.quantity_in_stock, v_product.unit, v_product.name, v_line.quantity
+        using errcode = 'BS001';
+    end if;
+
+    v_line_total := round(v_product.sale_price_cents * v_line.quantity);
+    v_line_cost  := round(v_product.cost_price_cents * v_line.quantity);
+
+    insert into public.sale_items (
+      sale_id, product_id, product_name, barcode, category_name, unit,
+      unit_price_cents, unit_cost_cents, quantity,
+      line_total_cents, line_cost_cents, line_profit_cents
+    ) values (
+      v_sale_id, v_product.id, v_product.name, v_product.barcode, v_product.category_name,
+      v_product.unit, v_product.sale_price_cents, v_product.cost_price_cents, v_line.quantity,
+      v_line_total, v_line_cost, v_line_total - v_line_cost
+    );
+
+    update public.products
+       set quantity_in_stock = quantity_in_stock - v_line.quantity
+     where id = v_product.id;
+
+    insert into public.stock_movements (product_id, delta, reason, sale_id, created_by)
+    values (v_product.id, -v_line.quantity, 'sale', v_sale_id, auth.uid());
+
+    v_subtotal := v_subtotal + v_line_total;
+    v_cost     := v_cost + v_line_cost;
+    v_items    := v_items + v_line.quantity;
+  end loop;
+
+  v_discount_cents := case p_discount_type
+    when 'percent' then round(v_subtotal * least(greatest(coalesce(p_discount_value, 0), 0), 100) / 100.0)
+    when 'amount'  then round(greatest(coalesce(p_discount_value, 0), 0) * 100)
+    else 0
+  end;
+  v_discount_cents := least(v_discount_cents, v_subtotal);
+
+  v_total := v_subtotal - v_discount_cents;
+  v_total_lbp := round((v_total / 100.0) * v_settings.usd_to_lbp_rate / v_settings.lbp_rounding)
+                 * v_settings.lbp_rounding;
+
+  update public.sales
+     set subtotal_cents   = v_subtotal,
+         discount_cents   = v_discount_cents,
+         total_cents      = v_total,
+         total_cost_cents = v_cost,
+         profit_cents     = v_total - v_cost,
+         item_count       = v_items,
+         total_lbp        = v_total_lbp
+   where id = v_sale_id;
+
+  -- The takings go into the cash box, in the same transaction as the sale itself.
+  if v_total > 0 then
+    insert into public.cash_movements (kind, amount_cents, sale_id, note, created_by)
+    values ('sale', v_total, v_sale_id, null, auth.uid());
+  end if;
+
+  return v_sale_id;
+end;
+$$;
+
+revoke all on function public.checkout_sale(jsonb, text, numeric, text, text) from public, anon;
+grant execute on function public.checkout_sale(jsonb, text, numeric, text, text) to authenticated;
+
+
+-- ==========================================================================
+-- 20260828090200_restock_cost.sql
+-- ==========================================================================
+-- ---------------------------------------------------------------------------
+-- adjust_stock, now able to say what a delivery cost and who paid for it.
+--
+-- Two ways to fund one:
+--
+--   budget   the shop pays. One entry out of the cash box, and the balance drops.
+--   outside  the owner pays from their own pocket. Two entries: the money coming in as an
+--            investment, and the same amount going straight out to the supplier. The balance
+--            is unchanged, which is the truth of it, and both halves stay visible so the
+--            total put in from outside can be told apart from the takings.
+--
+-- Only a delivery costs money. Correcting a miscount moves the count without any cash
+-- changing hands, so it never touches the ledger.
+-- ---------------------------------------------------------------------------
+create or replace function public.adjust_stock(
+  p_product_id uuid,
+  p_delta      numeric,
+  p_reason     text default 'restock',
+  p_note       text default null,
+  p_cost_cents bigint default null,
+  p_funding    text default 'budget'
+) returns numeric
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_product public.products%rowtype;
+  v_new     numeric;
+  v_cost    bigint;
+begin
+  if auth.uid() is null then
+    raise exception 'You must be signed in to change stock' using errcode = '42501';
+  end if;
+
+  if p_reason not in ('restock', 'adjustment', 'initial') then
+    raise exception 'Unknown stock reason %', p_reason using errcode = '22023';
+  end if;
+
+  if p_funding not in ('budget', 'outside') then
+    raise exception 'Unknown funding source %', p_funding using errcode = '22023';
+  end if;
+
+  if p_delta is null or p_delta = 0 then
+    raise exception 'Stock change must be a non-zero amount' using errcode = '22023';
+  end if;
+
+  select * into v_product from public.products where id = p_product_id for update;
+
+  if not found then
+    raise exception 'That product no longer exists' using errcode = '23503';
+  end if;
+
+  v_new := v_product.quantity_in_stock + p_delta;
+
+  if v_new < 0 then
+    raise exception 'That would leave "%" at % %, below zero',
+      v_product.name, v_new, v_product.unit using errcode = 'BS001';
+  end if;
+
+  update public.products set quantity_in_stock = v_new where id = p_product_id;
+
+  insert into public.stock_movements (product_id, delta, reason, note, created_by)
+  values (p_product_id, p_delta, p_reason, nullif(btrim(coalesce(p_note, '')), ''), auth.uid());
+
+  -- Left unsaid, a delivery is priced at what the article costs. Passing a figure overrides
+  -- it, because a supplier's price on the day is what actually left the till.
+  if p_reason = 'restock' and p_delta > 0 then
+    v_cost := coalesce(p_cost_cents, round(v_product.cost_price_cents * p_delta));
+
+    if v_cost < 0 then
+      raise exception 'A delivery cannot cost less than nothing' using errcode = '22023';
+    end if;
+
+    if v_cost > 0 then
+      if p_funding = 'outside' then
+        insert into public.cash_movements
+          (kind, amount_cents, product_id, product_name, note, created_by)
+        values ('investment', v_cost, p_product_id, v_product.name,
+                nullif(btrim(coalesce(p_note, '')), ''), auth.uid());
+      end if;
+
+      insert into public.cash_movements
+        (kind, amount_cents, product_id, product_name, note, created_by)
+      values ('restock', -v_cost, p_product_id, v_product.name,
+              nullif(btrim(coalesce(p_note, '')), ''), auth.uid());
+    end if;
+  end if;
+
+  return v_new;
+end;
+$$;
+
+-- The four argument form is gone; anything still calling it would silently skip the cost.
+drop function if exists public.adjust_stock(uuid, numeric, text, text);
+
+revoke all on function public.adjust_stock(uuid, numeric, text, text, bigint, text) from public, anon;
+grant execute on function public.adjust_stock(uuid, numeric, text, text, bigint, text) to authenticated;
+
+
+-- ==========================================================================
+-- 20260828090300_budget_reports.sql
+-- ==========================================================================
+-- ---------------------------------------------------------------------------
+-- What is in the cash box, and how it got there.
+-- ---------------------------------------------------------------------------
+create or replace function public.report_budget()
+returns table (
+  balance_cents        bigint,
+  from_sales_cents     bigint,
+  spent_restock_cents  bigint,
+  invested_cents       bigint,
+  entry_count          bigint
+)
+language sql
+stable
+as $$
+  select
+    coalesce(sum(amount_cents), 0)::bigint,
+    coalesce(sum(amount_cents) filter (where kind = 'sale'), 0)::bigint,
+    -- Stored negative; reported as the positive amount that was spent.
+    coalesce(-sum(amount_cents) filter (where kind = 'restock'), 0)::bigint,
+    coalesce(sum(amount_cents) filter (where kind = 'investment'), 0)::bigint,
+    count(*)::bigint
+  from public.cash_movements;
+$$;
+
+-- The ledger itself, newest first, so the balance can always be traced to its causes.
+create or replace function public.list_cash_movements(p_limit integer default 100)
+returns table (
+  id           uuid,
+  kind         text,
+  amount_cents bigint,
+  product_name text,
+  note         text,
+  created_at   timestamptz
+)
+language sql
+stable
+as $$
+  select m.id, m.kind, m.amount_cents, m.product_name, m.note, m.created_at
+  from public.cash_movements m
+  order by m.created_at desc, m.id desc
+  limit greatest(coalesce(p_limit, 100), 1);
+$$;
+
+do $$
+declare fn text;
+begin
+  foreach fn in array array[
+    'public.report_budget()',
+    'public.list_cash_movements(integer)'
+  ]
+  loop
+    execute format('revoke all on function %s from public, anon', fn);
+    execute format('grant execute on function %s to authenticated', fn);
+  end loop;
+end;
+$$;
+
+
+-- ==========================================================================
+-- 20260828090400_reset_shop.sql
+-- ==========================================================================
+-- ---------------------------------------------------------------------------
+-- reset_shop: empties the whole thing.
+--
+-- Deliberately blunt and deliberately awkward to call. It takes the word RESET and refuses
+-- anything else, so it cannot be reached by a stray tap or a mistyped request: whoever runs
+-- it has to have meant it.
+--
+-- Everything goes. Sales, the stock ledger, the cash box, every article and every category.
+-- What survives is the settings row, because the exchange rate is a fact about the country
+-- rather than a fact about the shop, and losing it would just be an extra thing to type back in.
+-- ---------------------------------------------------------------------------
+create or replace function public.reset_shop(p_confirm text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_counts jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'You must be signed in to reset the shop' using errcode = '42501';
+  end if;
+
+  if p_confirm is distinct from 'RESET' then
+    raise exception 'Reset needs the word RESET to confirm it' using errcode = '22023';
+  end if;
+
+  -- Counted before the delete, so the app can say exactly what it removed.
+  select jsonb_build_object(
+    'sales',      (select count(*) from public.sales),
+    'sale_items', (select count(*) from public.sale_items),
+    'stock',      (select count(*) from public.stock_movements),
+    'cash',       (select count(*) from public.cash_movements),
+    'products',   (select count(*) from public.products),
+    'categories', (select count(*) from public.categories)
+  ) into v_counts;
+
+  -- Order matters only for stock_movements, whose sale_id is ON DELETE SET NULL rather than
+  -- cascade; the rest fall away with their parents.
+  delete from public.cash_movements;
+  delete from public.stock_movements;
+  delete from public.sale_items;
+  delete from public.sales;
+  delete from public.products;
+  delete from public.categories;
+
+  return v_counts;
+end;
+$$;
+
+revoke all on function public.reset_shop(text) from public, anon;
+grant execute on function public.reset_shop(text) to authenticated;

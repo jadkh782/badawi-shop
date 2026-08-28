@@ -2,6 +2,7 @@
 
 import type {
   IAuthService,
+  IBudgetRepository,
   ICategoryRepository,
   IProductRepository,
   IFileSaver,
@@ -9,10 +10,13 @@ import type {
   IReportRepository,
   ISaleRepository,
   ISettingsRepository,
+  IShopReset,
 } from '@/application/ports';
 import {
   CheckoutSale,
   ExportReport,
+  GetBudget,
+  ResetShop,
   FindProductByBarcode,
   GetReport,
   RestockProduct,
@@ -26,11 +30,17 @@ import { SupabaseProductRepository } from '@/infrastructure/supabase/SupabasePro
 import { SupabaseReportRepository } from '@/infrastructure/supabase/SupabaseReportRepository';
 import { SupabaseSaleRepository } from '@/infrastructure/supabase/SupabaseSaleRepository';
 import { SupabaseSettingsRepository } from '@/infrastructure/supabase/SupabaseSettingsRepository';
+import {
+  SupabaseBudgetRepository,
+  SupabaseShopReset,
+} from '@/infrastructure/supabase/SupabaseBudgetRepository';
 import { ClientReportExporter } from '@/infrastructure/export/ClientReportExporter';
 import { BrowserFileSaver } from '@/infrastructure/files/BrowserFileSaver';
 import { CapacitorFileSaver } from '@/infrastructure/files/CapacitorFileSaver';
 import {
   DemoAuthService,
+  DemoBudgetRepository,
+  DemoShopReset,
   DemoCategoryRepository,
   DemoProductRepository,
   DemoSaleRepository,
@@ -55,6 +65,8 @@ export interface Container {
   reports: IReportRepository;
   settings: ISettingsRepository;
   auth: IAuthService;
+  budget: IBudgetRepository;
+  shopReset: IShopReset;
   exporter: IReportExporter;
   fileSaver: IFileSaver;
 
@@ -63,6 +75,8 @@ export interface Container {
   saveProduct: SaveProduct;
   restockProduct: RestockProduct;
   getReport: GetReport;
+  getBudget: GetBudget;
+  resetShop: ResetShop;
   exportReport: ExportReport;
   updateSettings: UpdateSettings;
 }
@@ -80,6 +94,8 @@ export function buildContainer(): Container {
         reports: new DemoReportRepository(),
         settings: new DemoSettingsRepository(),
         auth: new DemoAuthService(),
+        budget: new DemoBudgetRepository(),
+        shopReset: new DemoShopReset(),
       }
     : (() => {
         const db = getBrowserClient();
@@ -90,10 +106,12 @@ export function buildContainer(): Container {
           reports: new SupabaseReportRepository(db),
           settings: new SupabaseSettingsRepository(db),
           auth: new SupabaseAuthService(db),
+          budget: new SupabaseBudgetRepository(db),
+          shopReset: new SupabaseShopReset(db),
         };
       })();
 
-  const { products, categories, sales, reports, settings, auth } = parts;
+  const { products, categories, sales, reports, settings, auth, budget, shopReset } = parts;
   // The spreadsheet is built on the device either way, so one exporter serves both.
   const exporter = new ClientReportExporter(reports, settings);
   // How the finished file reaches the user is the part that differs by platform.
@@ -108,6 +126,8 @@ export function buildContainer(): Container {
     reports,
     settings,
     auth,
+    budget,
+    shopReset,
     exporter,
     fileSaver,
 
@@ -116,6 +136,8 @@ export function buildContainer(): Container {
     saveProduct: new SaveProduct(products),
     restockProduct: new RestockProduct(products),
     getReport: new GetReport(reports),
+    getBudget: new GetBudget(budget),
+    resetShop: new ResetShop(shopReset),
     exportReport: new ExportReport(exporter, fileSaver),
     updateSettings: new UpdateSettings(settings),
   };
