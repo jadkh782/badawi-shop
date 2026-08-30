@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { ShopSettings } from '@/domain';
+import { ShopSettings, type CostMethod } from '@/domain';
 import type { ISettingsRepository } from '@/application/ports';
 import { toSettings } from './mappers/toDomain';
 import type { AppSettingsRow } from './types';
@@ -29,6 +29,19 @@ export class SupabaseSettingsRepository implements ISettingsRepository {
       .single();
     if (error) throw translateError(error);
     return toSettings(data as AppSettingsRow);
+  }
+
+  /**
+   * Not a column write.
+   *
+   * Switching to average has to fold every article's open batches into one and restate its
+   * cost, which has to happen in the same transaction as the setting itself. Half of that
+   * applied is a shop whose till stops asking while its books still hold two prices.
+   */
+  async updateCostMethod(method: CostMethod): Promise<ShopSettings> {
+    const { error } = await this.db.rpc('set_cost_method', { p_method: method });
+    if (error) throw translateError(error);
+    return this.get();
   }
 
   async updateShopName(name: string): Promise<ShopSettings> {

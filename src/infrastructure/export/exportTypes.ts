@@ -48,6 +48,10 @@ export interface ExportPayload {
     items_sold: number;
     paid_usd_cents: number;
     paid_lbp_cents: number;
+    refunded_cents: number;
+    refund_count: number;
+    voided_cents: number;
+    voided_count: number;
   };
   series: Array<{
     bucket_start: string;

@@ -1,6 +1,11 @@
 -- ---------------------------------------------------------------------------
 -- What is in the cash box, and how it got there.
 -- ---------------------------------------------------------------------------
+-- Dropped first rather than replaced. A later migration widens what this returns, and
+-- CREATE OR REPLACE FUNCTION cannot change a return type, so replaying the whole schema
+-- over an up-to-date database failed here.
+drop function if exists public.report_budget();
+
 create or replace function public.report_budget()
 returns table (
   balance_cents        bigint,

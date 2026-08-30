@@ -19,6 +19,7 @@ import {
   ResetShop,
   FindProductByBarcode,
   GetReport,
+  ReverseSale,
   RestockProduct,
   SaveProduct,
   UpdateSettings,
@@ -75,6 +76,7 @@ export interface Container {
   saveProduct: SaveProduct;
   restockProduct: RestockProduct;
   getReport: GetReport;
+  reverseSale: ReverseSale;
   getBudget: GetBudget;
   resetShop: ResetShop;
   exportReport: ExportReport;
@@ -136,6 +138,7 @@ export function buildContainer(): Container {
     saveProduct: new SaveProduct(products),
     restockProduct: new RestockProduct(products),
     getReport: new GetReport(reports),
+    reverseSale: new ReverseSale(sales),
     getBudget: new GetBudget(budget),
     resetShop: new ResetShop(shopReset),
     exportReport: new ExportReport(exporter, fileSaver),

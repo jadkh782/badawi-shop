@@ -1,5 +1,5 @@
 import { DomainError, Money, type Product } from '@/domain';
-import type { IProductWriter, ProductDraft } from '../ports';
+import type { IProductWriter, ProductDraft, RestockFunding } from '../ports';
 
 /** What the inventory form collects, before it is turned into a stored record. */
 export interface ProductFormInput {
@@ -12,6 +12,13 @@ export interface ProductFormInput {
   lowStockThreshold: string;
   unit: string;
   notes: string;
+  /**
+   * Who paid for the opening stock.
+   *
+   * Only asked when an article is created holding stock, because that is the only time this
+   * form spends money. Editing an article afterwards never does.
+   */
+  funding: RestockFunding;
 }
 
 /**
@@ -54,7 +61,19 @@ export class SaveProduct {
       lowStockThreshold: threshold,
       unit: input.unit.trim() === '' ? 'piece' : input.unit.trim(),
       notes: input.notes.trim() === '' ? null : input.notes.trim(),
+      funding: input.funding ?? 'budget',
     };
+  }
+
+  /** What the opening stock will cost, which is what the form warns about before saving. */
+  static openingCost(input: ProductFormInput): Money {
+    try {
+      const quantity = Number(input.quantity.replace(',', '.') || 0);
+      if (!Number.isFinite(quantity) || quantity <= 0) return Money.zero();
+      return Money.fromInput(input.costPrice).multiply(quantity);
+    } catch {
+      return Money.zero();
+    }
   }
 
   async create(input: ProductFormInput): Promise<Product> {

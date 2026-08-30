@@ -257,6 +257,30 @@ delete. A bug at the till cannot remove an article.
 one place and not a single screen, use case or entity changes. That is the clearest evidence the
 layering is real rather than decorative.
 
+### What a thing cost, and taking a sale back
+
+Two behaviours are worth knowing about before you rely on the figures.
+
+**A supplier's price moves, and the shop chooses what that means.** Every delivery is entered at
+the price paid per unit, and when that differs from last time the app stops and asks what the
+shelf price should do about it: hold the same margin, take a new price, or leave it. Which cost
+the books then use is a setting:
+
+- **Average them out** (the default) — each delivery folds the remaining stock into one blended
+  price. Ten at $15 and ten at $20 become twenty at $17.50, and selling never asks anything.
+- **Keep each price apart** — the two tens stay separate, and selling asks which of them is
+  going over the counter. It stops asking on its own once the older stock sells through.
+
+Either way, every price change is written to the article's own history, and the price the last
+delivery was actually charged is kept beside the blended figure so both are visible.
+
+**A sale can be taken back two ways, and they are not the same.** A **void** says the sale should
+never have happened: everything returns to stock, the money leaves the cash box, and the sale
+disappears from the figures for the day it was rung up on. A **refund** says goods came back
+today: the chosen lines return to stock and the money goes out dated today, so today's report
+still agrees with today's drawer. Both put units back on the batch they were sold from, so stock
+handed back at last month's price is still stock at last month's price.
+
 ### Two things worth knowing
 
 **The device never posts a price.** Checkout sends product ids, quantities and the discount the
@@ -267,6 +291,12 @@ number in the books, and two tills cannot sell the same last item.
 
 **Sale lines carry their own copy** of the name, barcode, category, price and cost. Change a price
 today and last month's profit stays exactly as it was; delete an article and its history survives.
+
+**Every movement of money leaves an entry.** Sales in, deliveries out, the first stock of a new
+article, a miscount corrected on the shelf, a refund, a void. The Budget screen adds them up and
+can name every one of them, which is the only reason a balance is worth trusting. Stock found
+that was not on the books was paid for by someone, so the balance comes down; stock missing was
+never really bought, so it goes back up.
 
 ---
 
@@ -282,7 +312,10 @@ npm run test:all
 - `npm run test:db` — runs every migration against a real Postgres (PGlite, compiled to
   WebAssembly, so no Docker needed) and exercises `checkout_sale` and the reporting functions:
   stock deduction, over-sell refusal, discount clamping, duplicate folding, fractional quantities
-  for goods sold by weight, and day bucketing in the shop's own time zone.
+  for goods sold by weight, and day bucketing in the shop's own time zone. It also covers the
+  parts that move money without selling anything: weighted-average and per-batch costing,
+  corrections, opening stock, voids and partial refunds, including that a refund pays back
+  exactly what the screen quoted for it.
 
 `npm run build` typechecks the whole project.
 
@@ -301,6 +334,7 @@ npm run test:all
 | `npm run android:apk -- --release` | the same, as a release build |
 | `npm run android:open` | open the Android project in Android Studio |
 | `npm run setup` | point the app at your Supabase project and verify it works |
+| `node scripts/build-schema.mjs` | rebuild `supabase/schema.sql` from the migrations |
 
 ---
 

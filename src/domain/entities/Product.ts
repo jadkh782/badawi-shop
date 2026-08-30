@@ -9,6 +9,11 @@ export interface ProductProps {
   categoryId: string | null;
   categoryName: string | null;
   costPrice: Money;
+  /**
+   * What the last delivery was actually charged, as opposed to what the stock on hand
+   * averages out to. Null until an article has been through a priced delivery.
+   */
+  lastCostPrice?: Money | null;
   salePrice: Money;
   stock: Quantity;
   lowStockThreshold: Quantity;
@@ -30,6 +35,7 @@ export class Product {
   readonly categoryId: string | null;
   readonly categoryName: string | null;
   readonly costPrice: Money;
+  readonly lastCostPrice: Money | null;
   readonly salePrice: Money;
   readonly stock: Quantity;
   readonly lowStockThreshold: Quantity;
@@ -44,6 +50,7 @@ export class Product {
     this.categoryId = props.categoryId;
     this.categoryName = props.categoryName;
     this.costPrice = props.costPrice;
+    this.lastCostPrice = props.lastCostPrice ?? null;
     this.salePrice = props.salePrice;
     this.stock = props.stock;
     this.lowStockThreshold = props.lowStockThreshold;
@@ -61,6 +68,16 @@ export class Product {
   get marginPercent(): number | null {
     if (this.salePrice.isZero()) return null;
     return (this.unitProfit.cents / this.salePrice.cents) * 100;
+  }
+
+  /**
+   * True when the stock on hand was bought at more than one price.
+   *
+   * Only knowable by asking for the batches, so this is the cheap hint: an average that has
+   * drifted from the last price paid means the shelf is a blend of at least two deliveries.
+   */
+  get hasMixedCost(): boolean {
+    return this.lastCostPrice !== null && !this.lastCostPrice.equals(this.costPrice);
   }
 
   get isOutOfStock(): boolean {

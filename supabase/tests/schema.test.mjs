@@ -209,13 +209,17 @@ eq('stock is deducted once, for the combined quantity',
   (Number(before) - 3).toFixed(3));
 
 // --- adjust_stock ----------------------------------------------------------
+// adjust_stock reports back an object now, because the caller wants to know what the
+// delivery did to the price as well as to the count.
 eq('restocking raises the count',
-  (await one(`select adjust_stock($1, 20, 'restock', 'delivery') q`, [chips.id])).q, '25.000');
+  (await one(`select adjust_stock($1, 20, 'restock', 'delivery') ->> 'stock' q`, [chips.id])).q,
+  '25.000');
 eq('a restock is written to the ledger',
   (await one(`select delta || '/' || reason v from stock_movements
               where product_id = $1 and reason = 'restock'`, [chips.id])).v, '20.000/restock');
 eq('a correction can reduce the count',
-  (await one(`select adjust_stock($1, -5, 'adjustment', 'breakage') q`, [chips.id])).q, '20.000');
+  (await one(`select adjust_stock($1, -5, 'adjustment', 'breakage') ->> 'stock' q`, [chips.id])).q,
+  '20.000');
 
 await expectError('stock cannot be pushed below zero', 'BS001', () =>
   db.query(`select adjust_stock($1, -9999, 'adjustment', null)`, [chips.id]));
@@ -340,25 +344,38 @@ const budget = () => one('select * from report_budget()');
 const box0 = await budget();
 const salesTotal = Number((await one('select sum(total_cents) s from sales')).s);
 eq('every sale so far is in the box', box0.from_sales_cents, salesTotal);
-check('the balance is the takings, less what was spent, plus what was put in',
-  Number(box0.balance_cents) ===
-    Number(box0.from_sales_cents) - Number(box0.spent_restock_cents) + Number(box0.invested_cents),
-  JSON.stringify(box0));
+/*
+  The balance is every kind of movement added up. Spelling it out here is the point: a new
+  kind added to the ledger and forgotten in report_budget would otherwise show up as a
+  balance nobody can explain, months later, in the shop.
+*/
+const accounts = (b) =>
+  Number(b.from_sales_cents) -
+  Number(b.spent_restock_cents) -
+  Number(b.spent_opening_cents) +
+  Number(b.invested_cents) +
+  Number(b.corrections_cents) -
+  Number(b.refunded_cents) -
+  Number(b.voided_cents);
 
+check('the balance is every kind of movement added up',
+  Number(box0.balance_cents) === accounts(box0), JSON.stringify(box0));
+
+// A delivery is priced per unit now, so ten at 500 is 5000 out of the box.
 await db.query(`select adjust_stock($1, 10, 'restock', 'shop paid', 500, 'budget')`, [cola.id]);
 const paid = await budget();
 eq('a delivery the shop paid for leaves the box',
-  Number(paid.spent_restock_cents) - Number(box0.spent_restock_cents), 500);
+  Number(paid.spent_restock_cents) - Number(box0.spent_restock_cents), 5000);
 eq('and the balance drops by exactly that',
-  Number(box0.balance_cents) - Number(paid.balance_cents), 500);
+  Number(box0.balance_cents) - Number(paid.balance_cents), 5000);
 eq('it is not counted as money from outside', paid.invested_cents, box0.invested_cents);
 
 await db.query(`select adjust_stock($1, 10, 'restock', 'owner paid', 800, 'outside')`, [cola.id]);
 const outside = await budget();
 eq('an outside-funded delivery still counts as money spent',
-  Number(outside.spent_restock_cents) - Number(paid.spent_restock_cents), 800);
+  Number(outside.spent_restock_cents) - Number(paid.spent_restock_cents), 8000);
 eq('and is recorded as money put in from outside',
-  Number(outside.invested_cents) - Number(paid.invested_cents), 800);
+  Number(outside.invested_cents) - Number(paid.invested_cents), 8000);
 eq('but leaves the balance exactly where it was', outside.balance_cents, paid.balance_cents);
 
 const colaCost = Number((await one('select cost_price_cents c from products where id = $1', [cola.id])).c);
@@ -366,10 +383,26 @@ await db.query(`select adjust_stock($1, 5, 'restock', null)`, [cola.id]);
 eq('an unpriced delivery falls back to the cost price',
   Number((await budget()).spent_restock_cents) - Number(outside.spent_restock_cents), colaCost * 5);
 
+// --- corrections move money ------------------------------------------------
 const beforeCount = await budget();
+const costNow = Number((await one('select cost_price_cents c from products where id = $1', [cola.id])).c);
+
 await db.query(`select adjust_stock($1, -3, 'adjustment', 'miscount')`, [cola.id]);
-eq('correcting a miscount does not touch the money',
-  (await budget()).balance_cents, beforeCount.balance_cents);
+const short = await budget();
+check('stock missing from the shelf puts money back in the box',
+  Number(short.balance_cents) > Number(beforeCount.balance_cents),
+  `${beforeCount.balance_cents} -> ${short.balance_cents}`);
+eq('and it is recorded as a correction rather than a sale',
+  Number(short.corrections_cents) - Number(beforeCount.corrections_cents),
+  costNow * 3);
+
+await db.query(`select adjust_stock($1, 3, 'adjustment', 'found again')`, [cola.id]);
+const found = await budget();
+eq('stock found on the shelf takes the same money back out',
+  found.corrections_cents, beforeCount.corrections_cents);
+eq('so a miscount and its reversal leave the balance where it started',
+  found.balance_cents, beforeCount.balance_cents);
+eq('the balance still accounts for itself', Number(found.balance_cents), accounts(found));
 
 await expectError('an unknown funding source is refused', '22023', () =>
   db.query(`select adjust_stock($1, 1, 'restock', null, 100, 'magic')`, [cola.id]));
@@ -388,6 +421,190 @@ const ledgerSum = ledger.reduce((n, r) => n + Number(r.amount_cents), 0);
 eq('the ledger accounts for the balance exactly', ledgerSum, (await budget()).balance_cents);
 check('the ledger reads newest first',
   ledger.every((r, i) => i === 0 || new Date(ledger[i - 1].created_at) >= new Date(r.created_at)));
+
+// --- adding an article, and who paid for it ---------------------------------
+console.log('\ncost and price');
+
+const box0b = await budget();
+const tea = await one(
+  `select create_product('BC-Tea', 'Tea', $1, 1500, 2500, 10, 2, 'piece', null, 'outside') as id`,
+  [cat.id],
+);
+const box1b = await budget();
+
+eq('opening stock is recorded as money spent',
+  Number(box1b.spent_opening_cents) - Number(box0b.spent_opening_cents), 15000);
+eq('bought with the owner money it is also recorded as put in',
+  Number(box1b.invested_cents) - Number(box0b.invested_cents), 15000);
+eq('so the balance is exactly where it was', box1b.balance_cents, box0b.balance_cents);
+eq('the article starts holding its opening stock',
+  (await one('select quantity_in_stock q from products where id = $1', [tea.id])).q, '10.000');
+eq('and one batch stands behind it',
+  (await all('select * from list_stock_batches($1)', [tea.id])).length, 1);
+
+const box2b = await budget();
+await one(`select create_product('BC-Jam', 'Jam', $1, 1000, 2000, 5, 1, 'piece', null, 'budget') as id`,
+  [cat.id]);
+const box3b = await budget();
+eq('bought with shop money the balance drops instead',
+  Number(box2b.balance_cents) - Number(box3b.balance_cents), 5000);
+eq('and nothing is recorded as put in from outside', box3b.invested_cents, box2b.invested_cents);
+
+// --- a delivery at a different price ---------------------------------------
+await db.query(`select adjust_stock($1, 10, 'restock', 'dearer this time', 2000, 'budget')`, [tea.id]);
+eq('average mode blends the old price with the new',
+  (await one('select cost_price_cents c from products where id = $1', [tea.id])).c, 1750);
+eq('the price the supplier actually charged is kept on its own',
+  (await one('select last_cost_price_cents c from products where id = $1', [tea.id])).c, 2000);
+eq('and the shelf is still one batch',
+  (await all('select * from list_stock_batches($1)', [tea.id])).length, 1);
+
+const teaHistory = await all('select * from list_price_history($1, 20)', [tea.id]);
+check('the change is written to the price history',
+  teaHistory.some((h) => Number(h.old_cost_cents) === 1500 && Number(h.new_cost_cents) === 1750),
+  JSON.stringify(teaHistory));
+eq('the history keeps what was charged, not just the blend',
+  Number(teaHistory[0].purchase_cost_cents), 2000);
+
+await db.query(`select adjust_stock($1, 10, 'restock', null, 2000, 'budget', 3000)`, [tea.id]);
+eq('a new shelf price given with the delivery is applied',
+  (await one('select sale_price_cents c from products where id = $1', [tea.id])).c, 3000);
+eq('and the shelf price change is logged too',
+  Number((await all('select * from list_price_history($1, 20)', [tea.id]))[0].new_sale_price_cents),
+  3000);
+
+// --- selling from a chosen batch -------------------------------------------
+await db.query(`select set_cost_method('batch')`);
+await db.query(`select adjust_stock($1, 5, 'restock', 'a dear one', 5000, 'budget')`, [tea.id]);
+
+const teaBatches = await all('select * from list_stock_batches($1)', [tea.id]);
+eq('batch mode leaves the new delivery standing on its own', teaBatches.length, 2);
+
+const cheaper = teaBatches.reduce((a, b) =>
+  Number(a.unit_cost_cents) <= Number(b.unit_cost_cents) ? a : b);
+const chosen = await one(`select checkout_sale($1::jsonb, 'none', 0, 'USD', null) as id`, [
+  JSON.stringify([{ product_id: tea.id, quantity: 2, batch_id: cheaper.id }]),
+]);
+eq('the chosen batch is what prices the line',
+  (await one('select line_cost_cents c from sale_items where sale_id = $1', [chosen.id])).c,
+  Number(cheaper.unit_cost_cents) * 2);
+
+await db.query(`select set_cost_method('average')`);
+eq('switching back to average folds the batches into one',
+  (await all('select * from list_stock_batches($1)', [tea.id])).length, 1);
+
+// --- voiding ----------------------------------------------------------------
+console.log('\nvoids');
+
+const summaryAll = () =>
+  one(`select * from report_summary('1970-01-01'::timestamptz, '2100-01-01'::timestamptz)`);
+const liveSalesTotal = async () =>
+  Number((await one(`select coalesce(sum(total_cents), 0) s from sales where voided_at is null`)).s);
+
+const beforeVoid = await budget();
+const waterBefore = (await one('select quantity_in_stock q from products where id = $1',
+  [water.id])).q;
+
+const doomed = await one(`select checkout_sale($1::jsonb, 'none', 0, 'USD', null) as id`, [
+  JSON.stringify([{ product_id: water.id, quantity: 4 }]),
+]);
+await db.query(`select void_sale($1, 'rang up the wrong thing')`, [doomed.id]);
+const afterVoid = await budget();
+
+eq('voiding puts every unit back on the shelf',
+  (await one('select quantity_in_stock q from products where id = $1', [water.id])).q, waterBefore);
+eq('and takes the takings back out of the box',
+  afterVoid.balance_cents, beforeVoid.balance_cents);
+check('the sale is marked voided rather than deleted',
+  (await one('select voided_at from sales where id = $1', [doomed.id])).voided_at !== null);
+eq('a voided sale contributes nothing to the figures',
+  Number((await summaryAll()).total_sales_cents), await liveSalesTotal());
+eq('and none of its lines survive in the fact view',
+  (await one('select count(*) c from sale_line_facts where sale_id = $1', [doomed.id])).c, 0);
+
+await expectError('a sale cannot be voided twice', 'BS003', () =>
+  db.query(`select void_sale($1, null)`, [doomed.id]));
+
+// --- refunding --------------------------------------------------------------
+console.log('\nrefunds');
+
+const beforeRefund = await budget();
+const waterStock = (await one('select quantity_in_stock q from products where id = $1',
+  [water.id])).q;
+
+const returned = await one(`select checkout_sale($1::jsonb, 'none', 0, 'USD', null) as id`, [
+  JSON.stringify([{ product_id: water.id, quantity: 6 }]),
+]);
+const returnedLine = await one('select id, quantity from sale_items where sale_id = $1',
+  [returned.id]);
+
+const refund = await one(`select refund_sale($1, $2::jsonb, 'two came back') as r`, [
+  returned.id,
+  JSON.stringify([{ sale_item_id: returnedLine.id, quantity: 2 }]),
+]);
+
+eq('the returned units go back on the shelf',
+  (await one('select quantity_in_stock q from products where id = $1', [water.id])).q,
+  (Number(waterStock) - 4).toFixed(3));
+eq('the customer is handed back what those units were sold for',
+  Number(refund.r.total_cents), 100);
+
+const afterRefund = await budget();
+eq('and it comes out of the cash box',
+  Number(afterRefund.refunded_cents) - Number(beforeRefund.refunded_cents), 100);
+eq('the balance still accounts for itself', Number(afterRefund.balance_cents), accounts(afterRefund));
+
+await expectError('more cannot be returned than was sold', 'BS004', () =>
+  db.query(`select refund_sale($1, $2::jsonb, null)`, [
+    returned.id,
+    JSON.stringify([{ sale_item_id: returnedLine.id, quantity: 5 }]),
+  ]));
+
+const withRefunds = await summaryAll();
+eq('the summary reports what was handed back',
+  Number(withRefunds.refunded_cents),
+  Number((await one('select coalesce(sum(total_cents), 0) s from sale_refunds')).s));
+eq('and nets it off the takings',
+  Number(withRefunds.total_sales_cents),
+  (await liveSalesTotal()) - Number(withRefunds.refunded_cents));
+
+check('a refund shows in the fact view as a negative line',
+  Number((await one(`select coalesce(sum(quantity), 0) q from sale_line_facts where is_refund`)).q) < 0);
+
+await expectError('a partly refunded sale can no longer be voided', 'BS003', () =>
+  db.query(`select void_sale($1, null)`, [returned.id]));
+
+// A sale taken inside a basket discount hands back what the customer actually paid, and the
+// screen has to be able to say so before the refund happens rather than after. The figure
+// get_sale_lines reports and the figure refund_sale pays out are the same number or the till
+// has quietly lied to someone.
+const discounted = await one(`select checkout_sale($1::jsonb, 'percent', 10, 'USD', null) as id`, [
+  JSON.stringify([{ product_id: water.id, quantity: 4 }]),
+]);
+const discountedLine = await one('select * from get_sale_lines($1)', [discounted.id]);
+
+eq('a discounted line reports what it actually earned, not the shelf price',
+  Number(discountedLine.net_cents), 180);
+
+const quoted = Math.round((Number(discountedLine.net_cents) * 2) / Number(discountedLine.quantity));
+const paidBack = await one(`select refund_sale($1, $2::jsonb, null) as r`, [
+  discounted.id,
+  JSON.stringify([{ sale_item_id: discountedLine.id, quantity: 2 }]),
+]);
+
+eq('and refunding pays back exactly what the screen would have quoted',
+  Number(paidBack.r.total_cents), quoted);
+
+// --- the till roll ----------------------------------------------------------
+const roll = await all('select * from list_sales(null, null, 200)');
+check('the sales list holds the voided sale too, so it can be explained',
+  roll.some((r) => r.id === doomed.id && r.voided_at !== null));
+check('and shows what has been refunded against a sale',
+  roll.some((r) => r.id === returned.id && Number(r.refunded_cents) === 100));
+
+const soldLines = await all('select * from get_sale_lines($1)', [returned.id]);
+eq('a sale line reports how much of it has already gone back',
+  soldLines[0].refunded_quantity, '2.000');
 
 // --- reset -----------------------------------------------------------------
 console.log('\nreset');

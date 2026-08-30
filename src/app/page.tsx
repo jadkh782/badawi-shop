@@ -106,9 +106,14 @@ export default function HomePage() {
         </p>
       </section>
 
-      <div className="mt-auto grid grid-cols-2 gap-2 lg:mt-0">
+      <div className="mt-auto grid grid-cols-3 gap-2 lg:mt-0">
         <Link href="/budget" className="btn btn-ghost w-full">
           Budget
+        </Link>
+        {/* A mis-scan is noticed at the counter, so getting back to the last few sales is a
+            first-screen concern rather than something to hunt for. */}
+        <Link href="/sales" className="btn btn-ghost w-full">
+          Sales
         </Link>
         <Link href="/reports" className="btn btn-ghost w-full">
           <ChartIcon className="h-5 w-5" />

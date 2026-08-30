@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { Category, Product } from '@/domain';
+import type { BudgetSummary, Category, Product } from '@/domain';
 import { Money } from '@/domain';
 import type { ProductFormInput } from '@/application/use-cases';
+import { SaveProduct } from '@/application/use-cases';
 import { container } from '@/container';
 import { useSettings } from '@/presentation/providers/SettingsProvider';
 import { primeAudio } from '@/presentation/hooks/feedback';
@@ -23,6 +24,7 @@ export function emptyForm(barcode = ''): ProductFormInput {
     lowStockThreshold: '2',
     unit: 'piece',
     notes: '',
+    funding: 'budget',
   };
 }
 
@@ -37,6 +39,8 @@ export function formFrom(product: Product): ProductFormInput {
     lowStockThreshold: String(product.lowStockThreshold.value),
     unit: product.unit,
     notes: product.notes ?? '',
+    // Editing an article never spends anything, so this is only ever read on create.
+    funding: 'budget',
   };
 }
 
@@ -59,10 +63,28 @@ export function ProductForm({
   const { rate } = useSettings();
   const [categories, setCategories] = useState<Category[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [budget, setBudget] = useState<BudgetSummary | null>(null);
 
   useEffect(() => {
     void container().categories.list().then(setCategories).catch(() => setCategories([]));
   }, []);
+
+  useEffect(() => {
+    // Only the create form spends money, so only it needs to know what there is to spend.
+    if (!showQuantity) return;
+    void container()
+      .getBudget.execute(0)
+      .then((view) => setBudget(view.summary))
+      .catch(() => setBudget(null));
+  }, [showQuantity]);
+
+  // Opening stock is a purchase. What it costs decides whether the shop can cover it, and
+  // whether the question below is worth asking at all.
+  const openingCost = showQuantity ? SaveProduct.openingCost(value) : Money.zero();
+  const shortfall =
+    value.funding === 'budget' && budget !== null && !openingCost.isZero()
+      ? !budget.canAfford(openingCost)
+      : false;
 
   const set = (patch: Partial<ProductFormInput>) => onChange({ ...value, ...patch });
 
@@ -235,6 +257,50 @@ export function ProductForm({
         </div>
       </div>
 
+      {showQuantity && !openingCost.isZero() && (
+        <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-ink-raised)] px-4 py-3">
+          <p className="text-sm font-semibold">
+            This stock costs {openingCost.format()}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--color-faint)]">
+            Filling a shelf is money leaving someone&rsquo;s pocket, so the books should say whose.
+          </p>
+
+          <p className="eyebrow mt-3">Paid for with</p>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <PaidWith
+              label="Shop money"
+              detail={budget ? `${budget.balance.format()} available` : 'Loading...'}
+              selected={value.funding === 'budget'}
+              onSelect={() => set({ funding: 'budget' })}
+            />
+            <PaidWith
+              label="My own money"
+              detail="Recorded as put in"
+              selected={value.funding === 'outside'}
+              onSelect={() => set({ funding: 'outside' })}
+            />
+          </div>
+
+          {shortfall && budget && (
+            <p
+              className="mt-2 rounded-xl bg-[var(--color-danger-dim)] px-3 py-2 text-xs font-medium leading-relaxed text-[var(--color-danger)]"
+              role="alert"
+            >
+              The shop has {budget.balance.format()} and this costs {openingCost.format()}.
+              Pay for it yourself with <b>My own money</b>, or start with less stock.
+            </p>
+          )}
+
+          {value.funding === 'outside' && (
+            <p className="mt-2 text-xs leading-relaxed text-[var(--color-faint)]">
+              The budget stays where it is, and {openingCost.format()} is recorded as money you
+              put in from outside.
+            </p>
+          )}
+        </div>
+      )}
+
       <div>
         <p className="eyebrow">Sold by</p>
         <div className="strip -mx-4 mt-2 px-4 pb-1">
@@ -276,5 +342,33 @@ export function ProductForm({
         title="Scan the barcode"
       />
     </div>
+  );
+}
+
+function PaidWith({
+  label,
+  detail,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  detail: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className="min-h-16 rounded-2xl border px-3 py-2 text-left"
+      style={{
+        borderColor: selected ? 'var(--color-stock)' : 'var(--color-line)',
+        background: selected ? 'var(--color-stock-dim)' : 'transparent',
+      }}
+    >
+      <span className="block text-sm font-semibold">{label}</span>
+      <span className="tnum mt-0.5 block text-xs text-[var(--color-faint)]">{detail}</span>
+    </button>
   );
 }

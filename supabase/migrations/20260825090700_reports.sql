@@ -3,6 +3,11 @@
 -- rows rather than the sales table.
 -- ---------------------------------------------------------------------------
 
+-- Dropped first rather than replaced. A later migration widens what this returns, and
+-- CREATE OR REPLACE FUNCTION cannot change a return type, so replaying the whole schema
+-- over an up-to-date database failed here.
+drop function if exists public.report_summary(timestamptz, timestamptz);
+
 create or replace function public.report_summary(p_from timestamptz, p_to timestamptz)
 returns table (
   total_sales_cents    bigint,

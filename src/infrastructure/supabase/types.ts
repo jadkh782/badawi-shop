@@ -18,6 +18,8 @@ export interface ProductRow {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** The price the last delivery was charged at, kept apart from the costing figure. */
+  last_cost_price_cents: number | null;
   categories?: { name: string } | null;
 }
 
@@ -68,6 +70,7 @@ export interface AppSettingsRow {
   usd_to_lbp_rate: number;
   lbp_rounding: number;
   rate_updated_at: string | null;
+  cost_method: 'average' | 'batch';
 }
 
 export interface ReportSummaryRow {
@@ -79,6 +82,95 @@ export interface ReportSummaryRow {
   items_sold: number;
   paid_usd_cents: number;
   paid_lbp_cents: number;
+  refunded_cents: number;
+  refund_count: number;
+  voided_cents: number;
+  voided_count: number;
+}
+
+export interface StockBatchRow {
+  id: string;
+  unit_cost_cents: number;
+  quantity_remaining: number;
+  quantity_received: number;
+  source: 'opening' | 'restock' | 'average' | 'correction';
+  note: string | null;
+  received_at: string;
+}
+
+export interface PriceHistoryRow {
+  id: string;
+  changed_at: string;
+  source: 'opening' | 'restock' | 'manual' | 'method';
+  quantity: number | null;
+  purchase_cost_cents: number | null;
+  old_cost_cents: number;
+  new_cost_cents: number;
+  old_sale_price_cents: number;
+  new_sale_price_cents: number;
+  note: string | null;
+}
+
+/** What adjust_stock hands back: the new count, and what it did to the prices. */
+export interface StockChangeRow {
+  stock: number;
+  cost_price_cents: number;
+  previous_cost_cents: number;
+  sale_price_cents: number;
+  previous_sale_cents: number;
+  last_cost_cents: number | null;
+  cost_changed: boolean;
+  sale_price_changed: boolean;
+}
+
+export interface SaleListRow {
+  id: string;
+  sold_at: string;
+  total_cents: number;
+  profit_cents: number;
+  item_count: number;
+  payment_currency: 'USD' | 'LBP';
+  total_lbp: number;
+  note: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  refunded_cents: number;
+  refunded_items: number;
+  refund_count: number;
+}
+
+export interface SoldLineRow {
+  id: string;
+  product_id: string | null;
+  product_name: string;
+  barcode: string | null;
+  category_name: string | null;
+  unit: string;
+  quantity: number;
+  unit_price_cents: number;
+  unit_cost_cents: number;
+  line_total_cents: number;
+  net_cents: number;
+  refunded_quantity: number;
+}
+
+export interface BudgetRow {
+  balance_cents: number;
+  from_sales_cents: number;
+  spent_restock_cents: number;
+  spent_opening_cents: number;
+  invested_cents: number;
+  corrections_cents: number;
+  refunded_cents: number;
+  voided_cents: number;
+  entry_count: number;
+}
+
+export interface InventoryValueRow {
+  cost_value_cents: number;
+  retail_value_cents: number;
+  article_count: number;
+  unit_count: number;
 }
 
 export interface TopProductRow {

@@ -43,6 +43,31 @@ export function ReportBody({ data }: { data: ReportData }) {
           />
         </div>
 
+        {/* Only worth the space when something actually came back. A row of zeroes on a
+            normal day is noise pretending to be information. */}
+        {summary.hasReturns && (
+          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[var(--color-line)] pt-4">
+            <Figure
+              label="Rung up before returns"
+              value={summary.grossSales.format()}
+            />
+            {summary.refundCount > 0 && (
+              <Figure
+                label={`Refunded (${summary.refundCount})`}
+                value={`-${summary.refunded.format()}`}
+                tone="var(--color-danger)"
+              />
+            )}
+            {summary.voidedCount > 0 && (
+              <Figure
+                label={`Voided (${summary.voidedCount})`}
+                value={`-${summary.voided.format()}`}
+                tone="var(--color-danger)"
+              />
+            )}
+          </div>
+        )}
+
         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--color-line)] pt-4">
           <div className="rounded-xl bg-[var(--color-ink)] p-3">
             <p className="eyebrow">Taken in USD</p>

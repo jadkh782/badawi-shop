@@ -18,6 +18,10 @@ function payload(overrides: Partial<ExportPayload> = {}): ExportPayload {
       items_sold: 260,
       paid_usd_cents: 80_000,
       paid_lbp_cents: 45_000,
+      refunded_cents: 0,
+      refund_count: 0,
+      voided_cents: 0,
+      voided_count: 0,
     },
     series: [
       { bucket_start: '2026-08-01T00:00:00Z', sales_cents: 60_000, profit_cents: 24_000, transaction_count: 20, items_sold: 130 },
@@ -144,6 +148,7 @@ describe('ExcelWorkbookBuilder', () => {
       summary: {
         total_sales_cents: 0, total_cost_cents: 0, total_profit_cents: 0, total_discount_cents: 0,
         transaction_count: 0, items_sold: 0, paid_usd_cents: 0, paid_lbp_cents: 0,
+        refunded_cents: 0, refund_count: 0, voided_cents: 0, voided_count: 0,
       },
       series: [], topProducts: [], byCategory: [], lowStock: [], sales: [], lines: [],
     });

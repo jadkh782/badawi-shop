@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useRef, useState } from 'react';
-import type { DiscountType, PaymentCurrency, Product } from '@/domain';
+import type { DiscountType, PaymentCurrency, Product, StockBatch } from '@/domain';
 import { InsufficientStockError } from '@/domain';
 import { container } from '@/container';
 import { messageFor } from '@/infrastructure/supabase/errors';
@@ -18,7 +18,9 @@ import { CheckoutSheet } from '@/presentation/components/CheckoutSheet';
 import { QuantityStepper } from '@/presentation/components/QuantityStepper';
 import { ScanIcon, SearchIcon } from '@/presentation/components/Icons';
 import { SaleComplete } from '@/presentation/components/SaleComplete';
+import { BatchPicker } from '@/presentation/components/BatchPicker';
 import { ScanHint, EmptyCart } from '@/presentation/components/SellPieces';
+import { useSettings } from '@/presentation/providers/SettingsProvider';
 
 /**
  * Sell mode.
@@ -30,6 +32,7 @@ import { ScanHint, EmptyCart } from '@/presentation/components/SellPieces';
 export default function SellPage() {
   const router = useRouter();
   const { notify } = useToast();
+  const { settings } = useSettings();
   const { cart, add, increment, decrement, remove, setDiscount, clear } = useCart();
 
   const [scanning, setScanning] = useState(false);
@@ -40,9 +43,45 @@ export default function SellPage() {
   const [lastAdded, setLastAdded] = useState<Product | null>(null);
   const [unknownCode, setUnknownCode] = useState<string | null>(null);
   const [completed, setCompleted] = useState<string | null>(null);
+  // Set only while the till is asking which purchase price is going over the counter.
+  const [choosingBatch, setChoosingBatch] = useState<{
+    product: Product;
+    batches: StockBatch[];
+  } | null>(null);
 
   // Guards against the same code being handled twice while its lookup is still in flight.
   const pending = useRef<Set<string>>(new Set());
+
+  /**
+   * Puts an article in the basket, asking which price it came off first when it has to.
+   *
+   * Only has to when the shop keeps delivery prices apart and this article is holding stock
+   * from more than one. Every other time it goes straight in, which is every time in average
+   * mode and most times even in batch mode.
+   */
+  const addProduct = useCallback(
+    async (product: Product) => {
+      if (!settings.tracksPricesSeparately) {
+        add(product);
+        return true;
+      }
+
+      try {
+        const batches = await container().products.batches(product.id);
+        if (batches.length > 1) {
+          setChoosingBatch({ product, batches });
+          return false;
+        }
+        add(product, 1, batches[0] ?? null);
+      } catch {
+        // The batches are a refinement on the cost, not a precondition for selling. If they
+        // cannot be read, the sale still goes through and the database costs it oldest first.
+        add(product);
+      }
+      return true;
+    },
+    [add, settings.tracksPricesSeparately],
+  );
 
   const handleCode = useCallback(
     async (code: string) => {
@@ -64,11 +103,13 @@ export default function SellPage() {
           return;
         }
 
-        add(product);
+        const added = await addProduct(product);
         setLastAdded(product);
         setUnknownCode(null);
         setFlash(Date.now());
-        beepFound();
+        // A basket that has stopped to ask a question has not been added to yet, so the
+        // confirming beep would be a lie.
+        if (added) beepFound();
       } catch (error) {
         buzzError();
         notify(messageFor(error), 'error');
@@ -76,7 +117,7 @@ export default function SellPage() {
         pending.current.delete(code);
       }
     },
-    [add, notify],
+    [addProduct, notify],
   );
 
   // A hardware scanner works anywhere in Sell mode, with no camera and nothing to switch on.
@@ -188,7 +229,7 @@ export default function SellPage() {
         ) : (
           <ul className="divide-y divide-[var(--color-line)]">
             {cart.lines.map((line) => (
-              <li key={line.product.id} className="px-4 py-3">
+              <li key={line.key} className="px-4 py-3">
                 {/*
                   The name gets the full width on its own line. Sharing a row with the
                   stepper, the price and the remove button left it about a hundred pixels on a
@@ -196,10 +237,19 @@ export default function SellPage() {
                   shelf holds three sizes of it.
                 */}
                 <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 flex-1 font-semibold leading-snug">{line.product.name}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold leading-snug">{line.product.name}</p>
+                    {/* Two rows of the same article are only distinguishable by what they
+                        cost, so the row has to say which one it is. */}
+                    {line.batch && (
+                      <p className="tnum mt-0.5 text-[11px] text-[var(--color-faint)]">
+                        bought at {line.batch.unitCost.format()}
+                      </p>
+                    )}
+                  </div>
                   <button
                     type="button"
-                    onClick={() => remove(line.product.id)}
+                    onClick={() => remove(line.key)}
                     aria-label={`Remove ${line.product.name}`}
                     className="-mr-2 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center text-lg text-[var(--color-faint)]"
                   >
@@ -212,8 +262,8 @@ export default function SellPage() {
                     <QuantityStepper
                       value={line.quantity.value}
                       unit={line.product.unit}
-                      onDecrement={() => decrement(line.product.id)}
-                      onIncrement={() => increment(line.product.id)}
+                      onDecrement={() => decrement(line.key)}
+                      onIncrement={() => increment(line.key)}
                     />
                     <span className="tnum text-xs text-[var(--color-faint)]">
                       {line.unitPrice.format()} each
@@ -224,7 +274,8 @@ export default function SellPage() {
 
                 {line.exceedsStock && (
                   <p className="mt-2 text-xs font-semibold text-[var(--color-sell)]">
-                    Only {line.product.stock.format()} in stock
+                    Only {formatCount(line.available)} {line.product.unit}
+                    {line.batch ? ' left at that price' : ' in stock'}
                   </p>
                 )}
               </li>
@@ -257,12 +308,27 @@ export default function SellPage() {
         open={browsing}
         onClose={() => setBrowsing(false)}
         onPick={(product) => {
-          add(product);
-          setLastAdded(product);
-          beepFound();
           setBrowsing(false);
+          void addProduct(product).then((added) => {
+            setLastAdded(product);
+            if (added) beepFound();
+          });
         }}
       />
+
+      {choosingBatch && (
+        <BatchPicker
+          open
+          product={choosingBatch.product}
+          batches={choosingBatch.batches}
+          onClose={() => setChoosingBatch(null)}
+          onPick={(batch) => {
+            add(choosingBatch.product, 1, batch);
+            beepFound();
+            setChoosingBatch(null);
+          }}
+        />
+      )}
 
       <CheckoutSheet
         open={checkingOut}

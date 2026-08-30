@@ -10,6 +10,7 @@ import { useToast } from '@/presentation/providers/ToastProvider';
 import { AppShell } from '@/presentation/components/AppShell';
 import { ProductForm, formFrom } from '@/presentation/components/ProductForm';
 import { RestockSheet } from '@/presentation/components/RestockSheet';
+import { PriceHistory } from '@/presentation/components/PriceHistory';
 
 /**
  * Editing an article.
@@ -33,6 +34,8 @@ function EditProduct() {
   const [busy, setBusy] = useState(false);
   const [restocking, setRestocking] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // Bumped after a delivery so the price trail below picks up the row it just wrote.
+  const [reloadKey, setReloadKey] = useState(0);
 
   async function load() {
     try {
@@ -144,6 +147,8 @@ function EditProduct() {
           )}
         </section>
 
+        <PriceHistory product={product} reloadKey={reloadKey} />
+
         <ProductForm value={form} onChange={setForm} showQuantity={false} />
 
         <div className="px-4 pb-8">
@@ -162,6 +167,7 @@ function EditProduct() {
         onClose={() => setRestocking(false)}
         onDone={() => {
           setRestocking(false);
+          setReloadKey((n) => n + 1);
           void load();
         }}
       />

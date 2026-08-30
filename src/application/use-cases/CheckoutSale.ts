@@ -24,6 +24,8 @@ export class CheckoutSale {
       items: cart.lines.map((line) => ({
         productId: line.product.id,
         quantity: line.quantity.value,
+        // Only set when the till asked which purchase price was going over the counter.
+        batchId: line.batch?.id ?? null,
       })),
       discountType: cart.discount.type,
       discountValue: cart.discount.value,

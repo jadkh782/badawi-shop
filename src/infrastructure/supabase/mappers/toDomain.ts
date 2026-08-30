@@ -1,28 +1,40 @@
 import {
   Barcode,
+  BudgetSummary,
   Category,
   CategorySalesStat,
   ExchangeRate,
+  InventoryValue,
   LowStockItem,
   Money,
+  PriceChange,
   Product,
   ProductSalesStat,
   Quantity,
   Sale,
   SaleItem,
+  SaleRecord,
   SalesSummary,
   ShopSettings,
+  SoldLine,
+  StockBatch,
   TimeSeriesPoint,
 } from '@/domain';
 import type {
   AppSettingsRow,
+  BudgetRow,
   CategoryRow,
   CategoryStatRow,
+  InventoryValueRow,
   LowStockRow,
+  PriceHistoryRow,
   ProductRow,
   ReportSummaryRow,
   SaleItemRow,
+  SaleListRow,
   SaleRow,
+  SoldLineRow,
+  StockBatchRow,
   TimeSeriesRow,
   TopProductRow,
 } from '../types';
@@ -43,6 +55,10 @@ export function toProduct(row: ProductRow): Product {
     categoryId: row.category_id,
     categoryName: row.categories?.name ?? null,
     costPrice: Money.fromCents(num(row.cost_price_cents)),
+    lastCostPrice:
+      row.last_cost_price_cents === null || row.last_cost_price_cents === undefined
+        ? null
+        : Money.fromCents(num(row.last_cost_price_cents)),
     salePrice: Money.fromCents(num(row.sale_price_cents)),
     stock: Quantity.of(num(row.quantity_in_stock)),
     lowStockThreshold: Quantity.of(num(row.low_stock_threshold)),
@@ -61,6 +77,94 @@ export function toSettings(row: AppSettingsRow): ShopSettings {
     row.shop_name,
     ExchangeRate.create(num(row.usd_to_lbp_rate), num(row.lbp_rounding) || 1000),
     row.rate_updated_at ? new Date(row.rate_updated_at) : null,
+    row.cost_method === 'batch' ? 'batch' : 'average',
+  );
+}
+
+export function toStockBatch(row: StockBatchRow): StockBatch {
+  return new StockBatch(
+    row.id,
+    Money.fromCents(num(row.unit_cost_cents)),
+    Quantity.of(num(row.quantity_remaining)),
+    Quantity.of(num(row.quantity_received)),
+    row.source,
+    row.note,
+    new Date(row.received_at),
+  );
+}
+
+export function toPriceChange(row: PriceHistoryRow): PriceChange {
+  return new PriceChange(
+    row.id,
+    new Date(row.changed_at),
+    row.source,
+    row.quantity === null ? null : num(row.quantity),
+    row.purchase_cost_cents === null ? null : Money.fromCents(num(row.purchase_cost_cents)),
+    Money.fromCents(num(row.old_cost_cents)),
+    Money.fromCents(num(row.new_cost_cents)),
+    Money.fromCents(num(row.old_sale_price_cents)),
+    Money.fromCents(num(row.new_sale_price_cents)),
+    row.note,
+  );
+}
+
+export function toSaleRecord(row: SaleListRow): SaleRecord {
+  return new SaleRecord(
+    row.id,
+    new Date(row.sold_at),
+    Money.fromCents(num(row.total_cents)),
+    Money.fromCents(num(row.profit_cents)),
+    num(row.item_count),
+    row.payment_currency,
+    num(row.total_lbp),
+    row.note,
+    row.voided_at ? new Date(row.voided_at) : null,
+    row.void_reason,
+    Money.fromCents(num(row.refunded_cents)),
+    num(row.refunded_items),
+    num(row.refund_count),
+  );
+}
+
+export function toSoldLine(row: SoldLineRow): SoldLine {
+  return new SoldLine(
+    row.id,
+    row.product_id,
+    row.product_name,
+    row.barcode,
+    row.category_name,
+    row.unit,
+    num(row.quantity),
+    Money.fromCents(num(row.unit_price_cents)),
+    Money.fromCents(num(row.unit_cost_cents)),
+    Money.fromCents(num(row.line_total_cents)),
+    Money.fromCents(num(row.net_cents)),
+    num(row.refunded_quantity),
+  );
+}
+
+export function toBudget(row: BudgetRow | undefined): BudgetSummary {
+  if (!row) return BudgetSummary.empty();
+  return new BudgetSummary(
+    Money.fromCents(num(row.balance_cents)),
+    Money.fromCents(num(row.from_sales_cents)),
+    Money.fromCents(num(row.spent_restock_cents)),
+    Money.fromCents(num(row.spent_opening_cents)),
+    Money.fromCents(num(row.invested_cents)),
+    Money.fromCents(num(row.corrections_cents)),
+    Money.fromCents(num(row.refunded_cents)),
+    Money.fromCents(num(row.voided_cents)),
+    num(row.entry_count),
+  );
+}
+
+export function toInventoryValue(row: InventoryValueRow | undefined): InventoryValue {
+  if (!row) return InventoryValue.empty();
+  return new InventoryValue(
+    Money.fromCents(num(row.cost_value_cents)),
+    Money.fromCents(num(row.retail_value_cents)),
+    num(row.article_count),
+    num(row.unit_count),
   );
 }
 
@@ -112,6 +216,10 @@ export function toSummary(row: ReportSummaryRow | undefined): SalesSummary {
     num(row.items_sold),
     Money.fromCents(num(row.paid_usd_cents)),
     Money.fromCents(num(row.paid_lbp_cents)),
+    Money.fromCents(num(row.refunded_cents)),
+    num(row.refund_count),
+    Money.fromCents(num(row.voided_cents)),
+    num(row.voided_count),
   );
 }
 

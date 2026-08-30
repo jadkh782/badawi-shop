@@ -13,12 +13,16 @@ export { CartLine } from './entities/CartLine';
 export { Sale, SaleItem } from './entities/Sale';
 export type { PaymentCurrency } from './entities/Sale';
 export { ShopSettings } from './entities/ShopSettings';
+export type { CostMethod } from './entities/ShopSettings';
+export { StockBatch, PriceChange } from './entities/StockBatch';
+export type { BatchSource, PriceChangeSource } from './entities/StockBatch';
+export { SaleRecord, SoldLine } from './entities/SaleRecord';
 
 export * from './discounts';
 export * from './errors';
 
 export { SalesSummary } from './reports/SalesSummary';
-export { BudgetSummary, CashMovement } from './reports/Budget';
+export { BudgetSummary, CashMovement, InventoryValue } from './reports/Budget';
 export type { CashKind } from './reports/Budget';
 export {
   ProductSalesStat,

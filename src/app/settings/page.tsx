@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Money } from '@/domain';
+import { Money, type CostMethod } from '@/domain';
 import { container } from '@/container';
 import { messageFor } from '@/infrastructure/supabase/errors';
 import { useSettings } from '@/presentation/providers/SettingsProvider';
@@ -36,6 +36,7 @@ export default function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [lockOn, setLockOn] = useState(false);
   const [custom, setCustom] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     setRateInput(String(settings.exchangeRate.usdToLbp));
@@ -54,6 +55,25 @@ export default function SettingsPage() {
     const step = Number(rounding.replace(/[,\s]/g, '')) || 1000;
     return Math.round((parsed * SAMPLE.dollars) / step) * step;
   })();
+
+  async function chooseCostMethod(method: CostMethod) {
+    if (method === settings.costMethod) return;
+    setSwitching(true);
+    try {
+      await container().updateSettings.setCostMethod(method);
+      await refresh();
+      notify(
+        method === 'average'
+          ? 'Now averaging cost across the stock on hand'
+          : 'Now keeping each delivery price apart',
+        'success',
+      );
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   async function saveRate() {
     setBusy(true);
@@ -158,6 +178,41 @@ export default function SettingsPage() {
             >
               Save name
             </button>
+          </section>
+
+          {/* Where the shop decides what "what did this cost" means. Both answers are
+              honest; which one is right depends on how the shop actually thinks about its
+              stock, which is not something the app can work out on its behalf. */}
+          <section className="card p-4">
+            <p className="eyebrow">How cost is counted</p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
+              A supplier&rsquo;s price moves. Buy ten at $15, then ten more at $20, and the
+              shelf holds twenty units that did not cost the same as each other.
+            </p>
+
+            <div className="mt-3 flex flex-col gap-2">
+              <CostChoice
+                selected={settings.costMethod === 'average'}
+                disabled={switching}
+                onSelect={() => void chooseCostMethod('average')}
+                label="Average them out"
+                detail="Both deliveries become $17.50 each. One price per article, and selling never asks anything."
+              />
+              <CostChoice
+                selected={settings.costMethod === 'batch'}
+                disabled={switching}
+                onSelect={() => void chooseCostMethod('batch')}
+                label="Keep each price apart"
+                detail="The $15 ten and the $20 ten stay separate. Selling asks which is going over the counter, and stops asking once the older stock runs out."
+              />
+            </div>
+
+            {settings.costMethod === 'batch' && (
+              <p className="mt-3 rounded-xl bg-[var(--color-ink)] px-3 py-2 text-xs leading-relaxed text-[var(--color-faint)]">
+                Switching back to averaging folds every article&rsquo;s remaining stock into a
+                single price. Nothing is lost, but the till stops asking.
+              </p>
+            )}
           </section>
 
           <section className="card p-4">
@@ -290,5 +345,38 @@ export default function SettingsPage() {
         }}
       />
     </>
+  );
+}
+
+function CostChoice({
+  selected,
+  disabled,
+  onSelect,
+  label,
+  detail,
+}: {
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
+      aria-pressed={selected}
+      className="rounded-2xl border px-4 py-3 text-left disabled:opacity-60"
+      style={{
+        borderColor: selected ? 'var(--color-stock)' : 'var(--color-line)',
+        background: selected ? 'var(--color-stock-dim)' : 'transparent',
+      }}
+    >
+      <span className="block text-sm font-semibold">{label}</span>
+      <span className="mt-1 block text-xs leading-relaxed text-[var(--color-faint)]">
+        {detail}
+      </span>
+    </button>
   );
 }

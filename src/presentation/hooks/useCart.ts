@@ -1,7 +1,14 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { Cart, DiscountFactory, type DiscountType, type Product, Quantity } from '@/domain';
+import {
+  Cart,
+  DiscountFactory,
+  type DiscountType,
+  type Product,
+  Quantity,
+  type StockBatch,
+} from '@/domain';
 
 /**
  * Holds the basket for the current sale.
@@ -14,20 +21,25 @@ import { Cart, DiscountFactory, type DiscountType, type Product, Quantity } from
 export function useCart() {
   const [cart, setCart] = useState<Cart>(() => Cart.empty());
 
-  const add = useCallback((product: Product, quantity = 1) => {
-    setCart((current) => current.add(product, Quantity.of(quantity)));
+  const add = useCallback(
+    (product: Product, quantity = 1, batch: StockBatch | null = null) => {
+      setCart((current) => current.add(product, Quantity.of(quantity), batch));
+    },
+    [],
+  );
+
+  // Lines are addressed by key, not by product: the same article at two purchase prices is
+  // two rows, and either one has to be adjustable without disturbing the other.
+  const increment = useCallback((key: string) => {
+    setCart((current) => current.increment(key));
   }, []);
 
-  const increment = useCallback((productId: string) => {
-    setCart((current) => current.increment(productId));
+  const decrement = useCallback((key: string) => {
+    setCart((current) => current.decrement(key));
   }, []);
 
-  const decrement = useCallback((productId: string) => {
-    setCart((current) => current.decrement(productId));
-  }, []);
-
-  const remove = useCallback((productId: string) => {
-    setCart((current) => current.remove(productId));
+  const remove = useCallback((key: string) => {
+    setCart((current) => current.remove(key));
   }, []);
 
   const setDiscount = useCallback((type: DiscountType, value: number) => {

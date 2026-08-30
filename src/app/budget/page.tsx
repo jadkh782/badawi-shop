@@ -13,6 +13,11 @@ import { useSettings } from '@/presentation/providers/SettingsProvider';
  * One number matters here: what there is to spend on the next delivery. Everything else on
  * the screen exists to explain how it got to be that number, because a balance nobody can
  * account for is a balance nobody trusts.
+ *
+ * What the shelves are holding sits directly underneath, because the two are halves of one
+ * question. A low balance above a full stockroom is a shop that has just bought well; the
+ * same balance above empty shelves is a shop in trouble, and the balance alone cannot tell
+ * them apart.
  */
 export default function BudgetPage() {
   const { rate } = useSettings();
@@ -33,6 +38,7 @@ export default function BudgetPage() {
   }, [load]);
 
   const summary = view?.summary;
+  const inventory = view?.inventory;
 
   return (
     <AppShell title="Budget" back="/" wide>
@@ -70,6 +76,41 @@ export default function BudgetPage() {
         </section>
 
         <section className="card p-4">
+          <p className="eyebrow">Sitting on the shelves</p>
+          {inventory ? (
+            <>
+              <p className="tnum mt-1 text-3xl font-bold leading-none text-[var(--color-stock)]">
+                {inventory.atCost.format()}
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-faint)]">
+                {inventory.isEmpty
+                  ? 'Nothing on the shelves.'
+                  : `${formatUnits(inventory.unitCount)} units across ${inventory.articleCount} article${
+                      inventory.articleCount === 1 ? '' : 's'
+                    }, at what they cost.`}
+              </p>
+
+              {!inventory.isEmpty && (
+                <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--color-line)] pt-3">
+                  <div>
+                    <p className="eyebrow">Worth at shelf prices</p>
+                    <p className="tnum mt-1 font-bold">{inventory.atRetail.format()}</p>
+                  </div>
+                  <div>
+                    <p className="eyebrow">If it all sold</p>
+                    <p className="tnum mt-1 font-bold text-[var(--color-gain)]">
+                      +{inventory.potentialProfit.format()}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="mt-2 h-8 w-32 animate-pulse rounded-lg bg-[var(--color-line)]" />
+          )}
+        </section>
+
+        <section className="card p-4">
           <p className="eyebrow">Where it came from</p>
           <div className="mt-3 flex flex-col gap-3">
             <Figure
@@ -82,11 +123,43 @@ export default function BudgetPage() {
               value={summary ? `-${summary.spentOnRestock.format()}` : undefined}
               tone="var(--color-stock)"
             />
+            {summary && !summary.spentOnOpening.isZero() && (
+              <Figure
+                label="Spent stocking new articles"
+                value={`-${summary.spentOnOpening.format()}`}
+                tone="var(--color-stock)"
+              />
+            )}
             <Figure
               label="Put in from outside"
               value={summary?.investedFromOutside.format()}
               tone="var(--color-muted)"
             />
+            {summary && !summary.corrections.isZero() && (
+              <Figure
+                label="Stock corrections"
+                value={
+                  summary.corrections.isNegative()
+                    ? summary.corrections.format()
+                    : `+${summary.corrections.format()}`
+                }
+                hint="Stock found on the shelf was paid for by someone; stock missing was never really bought"
+              />
+            )}
+            {summary && !summary.refunded.isZero() && (
+              <Figure
+                label="Refunded to customers"
+                value={`-${summary.refunded.format()}`}
+                tone="var(--color-danger)"
+              />
+            )}
+            {summary && !summary.voided.isZero() && (
+              <Figure
+                label="Taken back out for voided sales"
+                value={`-${summary.voided.format()}`}
+                tone="var(--color-danger)"
+              />
+            )}
             <div className="border-t border-[var(--color-line)] pt-3">
               <Figure
                 label="Earned by the shop itself"
@@ -153,7 +226,7 @@ function Figure({
         {hint && <p className="mt-0.5 text-xs text-[var(--color-faint)]">{hint}</p>}
       </div>
       {value ? (
-        <span className="tnum shrink-0 font-bold" style={{ color: tone }}>
+        <span className="tnum shrink-0 font-bold" style={tone ? { color: tone } : undefined}>
           {value}
         </span>
       ) : (
@@ -161,4 +234,8 @@ function Figure({
       )}
     </div>
   );
+}
+
+function formatUnits(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }

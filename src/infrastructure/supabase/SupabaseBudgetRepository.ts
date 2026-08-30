@@ -1,16 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { BudgetSummary, CashMovement, Money, type CashKind } from '@/domain';
+import { CashMovement, InventoryValue, Money, type BudgetSummary, type CashKind } from '@/domain';
 import type { IBudgetRepository, IShopReset, ResetCounts } from '@/application/ports';
+import { toBudget, toInventoryValue } from './mappers/toDomain';
+import type { BudgetRow, InventoryValueRow } from './types';
 import { translateError } from './errors';
 import { num } from './types';
-
-interface BudgetRow {
-  balance_cents: number;
-  from_sales_cents: number;
-  spent_restock_cents: number;
-  invested_cents: number;
-  entry_count: number;
-}
 
 interface MovementRow {
   id: string;
@@ -27,17 +21,13 @@ export class SupabaseBudgetRepository implements IBudgetRepository {
   async summary(): Promise<BudgetSummary> {
     const { data, error } = await this.db.rpc('report_budget');
     if (error) throw translateError(error);
+    return toBudget((data as BudgetRow[])[0]);
+  }
 
-    const row = (data as BudgetRow[])[0];
-    if (!row) return BudgetSummary.empty();
-
-    return new BudgetSummary(
-      Money.fromCents(num(row.balance_cents)),
-      Money.fromCents(num(row.from_sales_cents)),
-      Money.fromCents(num(row.spent_restock_cents)),
-      Money.fromCents(num(row.invested_cents)),
-      num(row.entry_count),
-    );
+  async inventoryValue(): Promise<InventoryValue> {
+    const { data, error } = await this.db.rpc('report_inventory_value');
+    if (error) throw translateError(error);
+    return toInventoryValue((data as InventoryValueRow[])[0]);
   }
 
   async movements(limit = 100): Promise<CashMovement[]> {

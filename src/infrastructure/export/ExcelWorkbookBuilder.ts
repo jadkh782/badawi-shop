@@ -67,6 +67,17 @@ export class ExcelWorkbookBuilder {
       ['Cost of goods sold', money(s.total_cost_cents)],
       ['Total profit', money(s.total_profit_cents)],
       ['Discounts given', money(s.total_discount_cents)],
+      // Only worth the rows when something came back. A block of zeroes on an ordinary
+      // month is noise dressed up as information.
+      ...(s.refund_count || s.voided_count
+        ? ([
+            ['Rung up before returns', money(s.total_sales_cents + s.refunded_cents)],
+            ['Refunded to customers', money(s.refunded_cents)],
+            ['Refunds given', plain(s.refund_count)],
+            ['Voided sales', money(s.voided_cents)],
+            ['Sales voided', plain(s.voided_count)],
+          ] as Array<[string, { value: number | string; fmt?: string }]>)
+        : []),
       ['', { value: '' }],
       ['Transactions', plain(s.transaction_count)],
       ['Items sold', plain(s.items_sold)],

@@ -4,6 +4,7 @@ import { Money } from '../value-objects/Money';
 import { Quantity } from '../value-objects/Quantity';
 import { CartLine } from './CartLine';
 import type { Product } from './Product';
+import type { StockBatch } from './StockBatch';
 
 /**
  * The basket being built in Sell mode.
@@ -66,45 +67,59 @@ export class Cart {
     return this.lines.filter((line) => line.exceedsStock);
   }
 
-  findLine(productId: string): CartLine | undefined {
-    return this.lines.find((line) => line.product.id === productId);
+  /**
+   * Lines are addressed by key rather than by product.
+   *
+   * The same article bought at two prices is two rows, and "remove the cola" would otherwise
+   * be an ambiguous instruction that quietly removed the wrong one.
+   */
+  findLine(key: string): CartLine | undefined {
+    return this.lines.find((line) => line.key === key);
   }
 
   /** Scanning the same item twice bumps its quantity rather than adding a second row. */
-  add(product: Product, quantity: Quantity = Quantity.one()): Cart {
-    const existing = this.findLine(product.id);
+  add(product: Product, quantity: Quantity = Quantity.one(), batch: StockBatch | null = null): Cart {
+    const incoming = new CartLine(product, quantity, batch);
+    const existing = this.findLine(incoming.key);
     const lines = existing
-      ? this.lines.map((line) => (line.product.id === product.id ? line.plus(quantity) : line))
-      : [...this.lines, new CartLine(product, quantity)];
+      ? this.lines.map((line) => (line.key === incoming.key ? line.plus(quantity) : line))
+      : [...this.lines, incoming];
     return new Cart(lines, this.discount);
   }
 
   /** Setting a quantity to zero or below removes the line entirely. */
-  setQuantity(productId: string, quantity: Quantity): Cart {
-    if (!quantity.isPositive()) return this.remove(productId);
+  setQuantity(key: string, quantity: Quantity): Cart {
+    if (!quantity.isPositive()) return this.remove(key);
     return new Cart(
-      this.lines.map((line) => (line.product.id === productId ? line.withQuantity(quantity) : line)),
+      this.lines.map((line) => (line.key === key ? line.withQuantity(quantity) : line)),
       this.discount,
     );
   }
 
-  increment(productId: string): Cart {
-    const line = this.findLine(productId);
+  increment(key: string): Cart {
+    const line = this.findLine(key);
     if (!line) return this;
-    return this.setQuantity(productId, line.quantity.add(Quantity.one()));
+    return this.setQuantity(key, line.quantity.add(Quantity.one()));
   }
 
-  decrement(productId: string): Cart {
-    const line = this.findLine(productId);
+  decrement(key: string): Cart {
+    const line = this.findLine(key);
     if (!line) return this;
-    return this.setQuantity(productId, line.quantity.subtract(Quantity.one()));
+    return this.setQuantity(key, line.quantity.subtract(Quantity.one()));
   }
 
-  remove(productId: string): Cart {
+  remove(key: string): Cart {
     return new Cart(
-      this.lines.filter((line) => line.product.id !== productId),
+      this.lines.filter((line) => line.key !== key),
       this.discount,
     );
+  }
+
+  /** How many units of an article the basket already holds, across every batch of it. */
+  quantityOf(productId: string): number {
+    return this.lines
+      .filter((line) => line.product.id === productId)
+      .reduce((n, line) => n + line.quantity.value, 0);
   }
 
   withDiscount(discount: IDiscountStrategy): Cart {

@@ -1,39 +1,42 @@
 import {
   Barcode,
-  Category,
-  CategorySalesStat,
-  DateRange,
-  LowStockItem,
-  Money,
   BudgetSummary,
-  CashMovement,
-  Product,
-  ProductSalesStat,
-  Quantity,
-  type ReportBucket,
-  Sale,
-  SalesSummary,
-  ShopSettings,
-  TimeSeriesPoint,
+  Category,
   ExchangeRate,
+  InventoryValue,
+  Money,
+  PriceChange,
+  Product,
+  Quantity,
+  Sale,
+  SaleRecord,
+  ShopSettings,
+  SoldLine,
+  StockBatch,
+  CashMovement,
+  type CashKind,
+  type CostMethod,
+  type DateRange,
 } from '@/domain';
-import type { CashKind } from '@/domain';
 import type {
   CategoryDraft,
   CheckoutRequest,
   IAuthService,
+  IBudgetRepository,
   ICategoryRepository,
   IProductRepository,
-  IReportRepository,
   ISaleRepository,
   ISettingsRepository,
+  IShopReset,
   ProductDraft,
   ProductQuery,
+  RefundLine,
+  RefundResult,
+  ResetCounts,
   ShopUser,
   StockChange,
-  IBudgetRepository,
-  IShopReset,
-  ResetCounts,
+  StockChangeResult,
+  VoidResult,
 } from '@/application/ports';
 import { InMemoryStore } from './InMemoryStore';
 
@@ -63,64 +66,49 @@ export class DemoProductRepository implements IProductRepository {
       .slice(0, query.limit ?? 200);
   }
 
+  async batches(productId: string): Promise<StockBatch[]> {
+    return store().batchesFor(productId);
+  }
+
+  async priceHistory(productId: string, limit = 50): Promise<PriceChange[]> {
+    return store().historyFor(productId, limit);
+  }
+
   async create(draft: ProductDraft): Promise<Product> {
-    const product = build(store().nextId('p'), draft);
-    store().products.push(product);
-    return product;
+    return store().createProduct(draft);
   }
 
   async update(id: string, draft: ProductDraft): Promise<Product> {
     const existing = store().products.find((p) => p.id === id);
     if (!existing) throw new Error('That product no longer exists');
-    return store().replaceProduct(build(id, draft, existing.stock.value));
+
+    // Stock is deliberately untouched: it moves only through adjustStock, so every change
+    // leaves a ledger entry behind it.
+    return store().replaceProduct(
+      new Product({
+        id,
+        barcode: draft.barcode ? Barcode.create(draft.barcode) : null,
+        name: draft.name,
+        categoryId: draft.categoryId,
+        categoryName: store().categories.find((c) => c.id === draft.categoryId)?.name ?? null,
+        costPrice: Money.fromCents(draft.costPriceCents),
+        salePrice: Money.fromCents(draft.salePriceCents),
+        stock: existing.stock,
+        lowStockThreshold: Quantity.of(draft.lowStockThreshold),
+        unit: draft.unit,
+        notes: draft.notes,
+        isActive: true,
+      }),
+    );
   }
 
   async archive(id: string): Promise<void> {
     store().products = store().products.filter((p) => p.id !== id);
   }
 
-  async adjustStock(id: string, change: StockChange): Promise<number> {
-    const existing = store().products.find((p) => p.id === id);
-    if (!existing) throw new Error('That product no longer exists');
-
-    const next = existing.stock.value + change.delta;
-    if (next < 0) throw new Error(`That would leave "${existing.name}" below zero`);
-    store().replaceProduct(store().withStock(existing, next));
-
-    // Same money rules as the database, so the demo teaches the real behaviour.
-    if (change.reason === 'restock' && change.delta > 0) {
-      const cost =
-        change.costCents !== undefined
-          ? Money.fromCents(change.costCents)
-          : existing.costPrice.multiply(change.delta);
-
-      if (!cost.isZero()) {
-        if (change.funding === 'outside') {
-          store().recordCash('investment', cost, existing.name, change.note ?? null);
-        }
-        store().recordCash('restock', Money.zero().subtract(cost), existing.name, change.note ?? null);
-      }
-    }
-
-    return next;
+  async adjustStock(id: string, change: StockChange): Promise<StockChangeResult> {
+    return store().adjust(id, change);
   }
-}
-
-function build(id: string, draft: ProductDraft, stock?: number): Product {
-  return new Product({
-    id,
-    barcode: draft.barcode ? Barcode.create(draft.barcode) : null,
-    name: draft.name,
-    categoryId: draft.categoryId,
-    categoryName: store().categories.find((c) => c.id === draft.categoryId)?.name ?? null,
-    costPrice: Money.fromCents(draft.costPriceCents),
-    salePrice: Money.fromCents(draft.salePriceCents),
-    stock: Quantity.of(stock ?? draft.quantityInStock),
-    lowStockThreshold: Quantity.of(draft.lowStockThreshold),
-    unit: draft.unit,
-    notes: draft.notes,
-    isActive: true,
-  });
 }
 
 export class DemoCategoryRepository implements ICategoryRepository {
@@ -159,6 +147,26 @@ export class DemoSaleRepository implements ISaleRepository {
   async findById(id: string): Promise<Sale | null> {
     return store().sales.find((s) => s.id === id) ?? null;
   }
+
+  async list(range: DateRange | null, limit = 50): Promise<SaleRecord[]> {
+    return store().saleRecords(range?.from ?? null, range?.to ?? null, limit);
+  }
+
+  async lines(saleId: string): Promise<SoldLine[]> {
+    return store().soldLines(saleId);
+  }
+
+  async void(saleId: string, reason: string | null = null): Promise<VoidResult> {
+    return store().voidSale(saleId, reason);
+  }
+
+  async refund(
+    saleId: string,
+    lines: ReadonlyArray<RefundLine>,
+    reason: string | null = null,
+  ): Promise<RefundResult> {
+    return store().refundSale(saleId, lines, reason);
+  }
 }
 
 export class DemoSettingsRepository implements ISettingsRepository {
@@ -171,6 +179,7 @@ export class DemoSettingsRepository implements ISettingsRepository {
       store().settings.shopName,
       ExchangeRate.create(usdToLbp, rounding),
       new Date(),
+      store().settings.costMethod,
     );
     return store().settings;
   }
@@ -180,8 +189,13 @@ export class DemoSettingsRepository implements ISettingsRepository {
       name,
       store().settings.exchangeRate,
       store().settings.rateUpdatedAt,
+      store().settings.costMethod,
     );
     return store().settings;
+  }
+
+  async updateCostMethod(method: CostMethod): Promise<ShopSettings> {
+    return store().setCostMethod(method);
   }
 }
 
@@ -207,22 +221,28 @@ export class DemoBudgetRepository implements IBudgetRepository {
     const cash = store().cash;
     const of = (kind: CashKind) =>
       Money.sum(cash.filter((m) => m.kind === kind).map((m) => m.amount));
+    // Money out is stored negative and reported as the amount that left.
+    const out = (kind: CashKind) => Money.zero().subtract(of(kind));
 
-    const spent = of('restock');
     return new BudgetSummary(
       Money.sum(cash.map((m) => m.amount)),
       of('sale'),
-      // Stored negative; shown as the amount that went out.
-      Money.zero().subtract(spent),
+      out('restock'),
+      out('opening'),
       of('investment'),
+      of('correction'),
+      out('refund'),
+      out('void'),
       cash.length,
     );
   }
 
+  async inventoryValue(): Promise<InventoryValue> {
+    return store().inventoryValue();
+  }
+
   async movements(limit = 100): Promise<CashMovement[]> {
-    return [...store().cash]
-      .sort((a, b) => b.at.getTime() - a.at.getTime())
-      .slice(0, limit);
+    return [...store().cash].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
   }
 }
 
@@ -242,6 +262,13 @@ export class DemoShopReset implements IShopReset {
     s.cash = [];
     s.products = [];
     s.categories = [];
+    s.batches = [];
+    s.priceHistory = [];
+    s.refunds = [];
+    s.allocations.clear();
+    s.voided.clear();
+    s.lastCost.clear();
+    s.priceOwner.clear();
     return counts;
   }
 }

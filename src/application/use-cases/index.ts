@@ -11,3 +11,4 @@ export { GetReport } from './GetReport';
 export type { ReportData } from './GetReport';
 export { ExportReport } from './ExportReport';
 export { UpdateSettings } from './UpdateSettings';
+export { ReverseSale } from './ReverseSale';

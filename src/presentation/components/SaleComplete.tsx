@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import type { Sale } from '@/domain';
 import { container } from '@/container';
+import { messageFor } from '@/infrastructure/supabase/errors';
 import { useSettings } from '@/presentation/providers/SettingsProvider';
+import { useToast } from '@/presentation/providers/ToastProvider';
 import { Amount } from './Amount';
 
 /**
@@ -24,12 +26,31 @@ export function SaleComplete({
   onDone: () => void;
 }) {
   const { rate } = useSettings();
+  const { notify } = useToast();
   const [sale, setSale] = useState<Sale | null>(null);
   const [tendered, setTendered] = useState('');
+  // Two taps to undo a sale, because one tap next to "Next sale" is an accident waiting.
+  const [confirmingVoid, setConfirmingVoid] = useState(false);
+  const [voiding, setVoiding] = useState(false);
+  const [voided, setVoided] = useState(false);
 
   useEffect(() => {
     void container().sales.findById(saleId).then(setSale).catch(() => setSale(null));
   }, [saleId]);
+
+  async function voidIt() {
+    setVoiding(true);
+    try {
+      await container().reverseSale.voidSale(saleId, 'Voided at the till');
+      setVoided(true);
+      notify('Sale voided, everything back on the shelf', 'success');
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setVoiding(false);
+      setConfirmingVoid(false);
+    }
+  }
 
   const paidInUsd = sale?.paymentCurrency === 'USD';
   const dueValue = sale ? (paidInUsd ? sale.total.dollars : sale.totalLbp) : 0;
@@ -50,7 +71,7 @@ export function SaleComplete({
         </div>
 
         <div>
-          <p className="eyebrow">Sale recorded</p>
+          <p className="eyebrow">{voided ? 'Sale voided' : 'Sale recorded'}</p>
           <div className="mt-3 flex justify-center">
             {sale ? (
               <Amount value={sale.total} size="hero" />
@@ -66,7 +87,7 @@ export function SaleComplete({
           )}
         </div>
 
-        {sale && (
+        {sale && !voided && (
           <div className="card w-full max-w-xs p-4 text-left">
             <label className="eyebrow" htmlFor="tendered">
               Cash given ({sale.paymentCurrency})
@@ -92,6 +113,40 @@ export function SaleComplete({
           </div>
         )}
       </div>
+
+      {/* The wrong item scanned is discovered here, seconds later, with the customer still
+          at the counter. Anywhere else is too late to be the obvious place for this. */}
+      {sale && !voided && (
+        <div className="safe-bottom mb-2 flex justify-center">
+          {confirmingVoid ? (
+            <div className="flex w-full max-w-xs gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost flex-1"
+                onClick={() => setConfirmingVoid(false)}
+              >
+                Keep it
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger flex-1"
+                disabled={voiding}
+                onClick={() => void voidIt()}
+              >
+                {voiding ? 'Voiding...' : 'Yes, void it'}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingVoid(true)}
+              className="min-h-11 px-4 text-sm font-semibold text-[var(--color-muted)] underline underline-offset-4"
+            >
+              Something wrong? Void this sale
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="safe-bottom flex gap-2">
         <button type="button" className="btn btn-ghost flex-1" onClick={onDone}>

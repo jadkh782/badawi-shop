@@ -45,6 +45,10 @@ export class ClientReportExporter implements IReportExporter {
         items_sold: data.summary.itemsSold,
         paid_usd_cents: data.summary.salesPaidInUsd.cents,
         paid_lbp_cents: data.summary.salesPaidInLbp.cents,
+        refunded_cents: data.summary.refunded.cents,
+        refund_count: data.summary.refundCount,
+        voided_cents: data.summary.voided.cents,
+        voided_count: data.summary.voidedCount,
       },
       series: data.series.map((point) => ({
         bucket_start: point.bucketStart.toISOString(),

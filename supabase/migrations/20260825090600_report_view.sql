@@ -9,7 +9,13 @@
 -- security_invoker means the view is subject to the same row level security as the tables
 -- underneath it, rather than quietly running with the owner rights.
 -- ---------------------------------------------------------------------------
-create or replace view public.sale_line_facts
+-- Dropped first rather than replaced. A later migration widens this view, and CREATE OR
+-- REPLACE VIEW refuses to hand back a column it did not have before, so replaying the whole
+-- schema over an up-to-date database failed here. Dropping makes each replay define the view
+-- from scratch, whatever shape it was left in.
+drop view if exists public.sale_line_facts;
+
+create view public.sale_line_facts
 with (security_invoker = on) as
 select
   si.id,

@@ -6,6 +6,7 @@ import { ExchangeRate } from './value-objects/ExchangeRate';
 import { DateRange } from './value-objects/DateRange';
 import { Product } from './entities/Product';
 import { Cart } from './entities/Cart';
+import { StockBatch } from './entities/StockBatch';
 import { NoDiscount } from './discounts/NoDiscount';
 import { PercentageDiscount } from './discounts/PercentageDiscount';
 import { FixedAmountDiscount } from './discounts/FixedAmountDiscount';
@@ -35,6 +36,18 @@ function makeProduct(o: ProductOverrides = {}): Product {
     notes: null,
     isActive: true,
   });
+}
+
+function makeBatch(id: string, costDollars: number, remaining = 50): StockBatch {
+  return new StockBatch(
+    id,
+    Money.fromDollars(costDollars),
+    Quantity.of(remaining),
+    Quantity.of(remaining),
+    'restock',
+    null,
+    new Date('2026-08-01T10:00:00Z'),
+  );
 }
 
 describe('Money', () => {
@@ -202,8 +215,49 @@ describe('Cart', () => {
   });
 
   it('removes a line when its quantity is stepped down to zero', () => {
-    const cart = Cart.empty().add(makeProduct()).decrement('p1');
-    expect(cart.isEmpty).toBe(true);
+    const product = makeProduct();
+    const cart = Cart.empty().add(product);
+    expect(cart.decrement(cart.lines[0]!.key).isEmpty).toBe(true);
+  });
+
+  it('keeps the same article at two purchase prices as two lines', () => {
+    const product = makeProduct({ cost: 1, price: 3 });
+    const cart = Cart.empty()
+      .add(product, Quantity.of(2), makeBatch('b1', 1))
+      .add(product, Quantity.of(3), makeBatch('b2', 2));
+
+    // Same article, same price to the customer, two different costs to the shop.
+    expect(cart.lineCount).toBe(2);
+    expect(cart.itemCount).toBe(5);
+    expect(cart.quantityOf('p1')).toBe(5);
+    expect(cart.subtotal.cents).toBe(1500);
+    expect(cart.totalCost.cents).toBe(2 * 100 + 3 * 200);
+  });
+
+  it('merges a rescan into the line for the batch it came off', () => {
+    const product = makeProduct();
+    const batch = makeBatch('b1', 1);
+    const cart = Cart.empty().add(product, Quantity.one(), batch).add(product, Quantity.one(), batch);
+    expect(cart.lineCount).toBe(1);
+    expect(cart.itemCount).toBe(2);
+  });
+
+  it('stepping one batch line does not disturb the other', () => {
+    const product = makeProduct();
+    const cart = Cart.empty()
+      .add(product, Quantity.of(2), makeBatch('b1', 1))
+      .add(product, Quantity.of(2), makeBatch('b2', 2));
+
+    const stepped = cart.increment(cart.lines[0]!.key);
+    expect(stepped.lines[0]!.quantity.value).toBe(3);
+    expect(stepped.lines[1]!.quantity.value).toBe(2);
+  });
+
+  it('measures a batch line against its own batch, not the whole shelf', () => {
+    // Plenty on the shelf overall, but only three of them at this price.
+    const product = makeProduct({ stock: 100 });
+    const cart = Cart.empty().add(product, Quantity.of(5), makeBatch('b1', 1, 3));
+    expect(cart.overstockedLines).toHaveLength(1);
   });
 
   it('applies a percentage discount to the subtotal', () => {

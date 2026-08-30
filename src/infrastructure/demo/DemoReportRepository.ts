@@ -22,7 +22,7 @@ const store = () => InMemoryStore.get();
  */
 export class DemoReportRepository implements IReportRepository {
   private inRange(range: DateRange): Sale[] {
-    return store().sales.filter(
+    return store().liveSales().filter(
       (sale) => sale.soldAt >= range.from && sale.soldAt < range.to,
     );
   }
@@ -31,15 +31,41 @@ export class DemoReportRepository implements IReportRepository {
     const sales = this.inRange(range);
     const sum = (pick: (s: Sale) => Money) => Money.sum(sales.map(pick));
 
+    // Refunds count against the day they happened rather than the day of the sale, so the
+    // figures agree with what actually went in and out of the drawer.
+    const back = store().refundsIn(range.from, range.to);
+    const backTotal = Money.sum(back.map((r) => r.total));
+    const backCost = Money.sum(back.map((r) => r.cost));
+    const currencyOf = (currency: 'USD' | 'LBP') =>
+      Money.sum(
+        back
+          .filter((r) => store().sales.find((s) => s.id === r.saleId)?.paymentCurrency === currency)
+          .map((r) => r.total),
+      );
+
+    // A void erases its sale outright, so it is counted in the period it was rung up on.
+    const killed = [...store().voided.entries()].filter(
+      ([, when]) => when.at >= range.from && when.at < range.to,
+    );
+    const killedTotal = Money.sum(
+      killed.map(([id]) => store().sales.find((s) => s.id === id)?.total ?? Money.zero()),
+    );
+
     return new SalesSummary(
-      sum((s) => s.total),
-      sum((s) => s.totalCost),
-      sum((s) => s.profit),
+      sum((s) => s.total).subtract(backTotal),
+      sum((s) => s.totalCost).subtract(backCost),
+      sum((s) => s.profit).subtract(backTotal.subtract(backCost)),
       sum((s) => s.discountAmount),
       sales.length,
-      sales.reduce((n, s) => n + s.itemCount, 0),
-      Money.sum(sales.filter((s) => s.paymentCurrency === 'USD').map((s) => s.total)),
-      Money.sum(sales.filter((s) => s.paymentCurrency === 'LBP').map((s) => s.total)),
+      sales.reduce((n, s) => n + s.itemCount, 0) - back.reduce((n, r) => n + r.items, 0),
+      Money.sum(sales.filter((s) => s.paymentCurrency === 'USD').map((s) => s.total))
+        .subtract(currencyOf('USD')),
+      Money.sum(sales.filter((s) => s.paymentCurrency === 'LBP').map((s) => s.total))
+        .subtract(currencyOf('LBP')),
+      backTotal,
+      back.length,
+      killedTotal,
+      killed.length,
     );
   }
 
@@ -52,8 +78,13 @@ export class DemoReportRepository implements IReportRepository {
     return lineTotal.subtract(Money.fromCents(share));
   }
 
+  /**
+   * Every line that counts in the period, with returns coming back through as negatives on
+   * the day they happened. Best sellers and category totals then net out without either of
+   * them knowing that refunds exist.
+   */
   private lines(range: DateRange) {
-    return this.inRange(range).flatMap((sale) =>
+    const sold = this.inRange(range).flatMap((sale) =>
       sale.items.map((item) => {
         const net = this.netOf(sale, item.lineTotal);
         return {
@@ -67,6 +98,22 @@ export class DemoReportRepository implements IReportRepository {
         };
       }),
     );
+
+    const returned = store()
+      .refundsIn(range.from, range.to)
+      .flatMap((refund) =>
+        refund.lines.map((line) => ({
+          name: line.productName,
+          barcode: null as string | null,
+          category: line.categoryName ?? 'Uncategorised',
+          productId: line.productId,
+          quantity: -line.quantity,
+          net: Money.zero().subtract(line.net),
+          profit: Money.zero().subtract(line.net.subtract(line.cost)),
+        })),
+      );
+
+    return [...sold, ...returned];
   }
 
   async topProducts(range: DateRange, limit = 25): Promise<ProductSalesStat[]> {
@@ -118,16 +165,19 @@ export class DemoReportRepository implements IReportRepository {
 
     while (cursor < range.to) {
       const next = advance(cursor, bucket);
-      const sales = store().sales.filter((s) => s.soldAt >= cursor && s.soldAt < next);
+      const sales = store().liveSales().filter((s) => s.soldAt >= cursor && s.soldAt < next);
+      const back = store().refundsIn(cursor, next);
+      const backTotal = Money.sum(back.map((r) => r.total));
+      const backProfit = Money.sum(back.map((r) => r.total.subtract(r.cost)));
 
       points.push(
         new TimeSeriesPoint(
           new Date(cursor),
           label(cursor, bucket),
-          Money.sum(sales.map((s) => s.total)),
-          Money.sum(sales.map((s) => s.profit)),
+          Money.sum(sales.map((s) => s.total)).subtract(backTotal),
+          Money.sum(sales.map((s) => s.profit)).subtract(backProfit),
           sales.length,
-          sales.reduce((n, s) => n + s.itemCount, 0),
+          sales.reduce((n, s) => n + s.itemCount, 0) - back.reduce((n, r) => n + r.items, 0),
         ),
       );
 

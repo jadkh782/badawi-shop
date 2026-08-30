@@ -96,6 +96,9 @@ export class SupabaseReportRepository implements IReportRepository {
       .select('*, sale_items ( * )')
       .gte('sold_at', from)
       .lt('sold_at', to)
+      // A voided sale did not happen, so it does not belong in the spreadsheet any more than
+      // it belongs in the figures the spreadsheet is meant to agree with.
+      .is('voided_at', null)
       .order('sold_at');
     if (error) throw translateError(error);
     return (data as SaleRow[]).map(toSale);
