@@ -1,4 +1,4 @@
-import { DomainError, Money, type Product } from '@/domain';
+import { DomainError, Money, Product } from '@/domain';
 import type { IProductWriter, ProductDraft, RestockFunding } from '../ports';
 
 /** What the inventory form collects, before it is turned into a stored record. */
@@ -12,6 +12,12 @@ export interface ProductFormInput {
   lowStockThreshold: string;
   unit: string;
   notes: string;
+  /**
+   * The size and taste, on shelves that come in sizes. The stored name is assembled from
+   * these and the brand, so the catalogue never ends up holding two spellings of one thing.
+   */
+  variantSize: string;
+  variantTrait: string;
   /**
    * Who paid for the opening stock.
    *
@@ -51,9 +57,16 @@ export class SaveProduct {
       throw new DomainError('The low-stock level must be zero or more');
     }
 
+    const size = input.variantSize?.trim() ?? '';
+    const trait = input.variantTrait?.trim() ?? '';
+
     return {
       barcode: input.barcode.trim() === '' ? null : input.barcode.trim(),
-      name,
+      // Assembled here rather than in the component, so an article created from the till,
+      // from a scan or from a test all end up named the same way.
+      name: Product.assembleName(name, size, trait),
+      variantSize: size === '' ? null : size,
+      variantTrait: trait === '' ? null : trait,
       categoryId: input.categoryId,
       costPriceCents: costPrice.cents,
       salePriceCents: salePrice.cents,

@@ -3313,3 +3313,327 @@ grant execute on function public.reset_shop(text) to authenticated;
 revoke all on all tables    in schema public from anon;
 revoke all on all sequences in schema public from anon;
 revoke all on all functions in schema public from anon;
+
+-- ==========================================================================
+-- 20260830090800_remove_returns_money.sql
+-- ==========================================================================
+-- ---------------------------------------------------------------------------
+-- Removing an article gives back what its stock cost.
+--
+-- Taking an article out of the inventory was a one line update that flipped is_active and
+-- said nothing else. An article holding twelve tins that cost $2 each simply stopped
+-- existing, and $24 of stock left the shop without the cash box noticing. The shelves were
+-- worth less and the balance was unchanged, which cannot both be true.
+--
+-- So removal now works like every other way stock leaves: the units come off the shelf,
+-- priced at what those exact units cost rather than at today's average, and the money goes
+-- back into the budget. It reads as its own kind in the ledger because "removed from
+-- inventory" and "corrected a miscount" are different events even when the arithmetic
+-- matches, and a balance nobody can explain is a balance nobody trusts.
+--
+-- The article itself is archived rather than deleted. Sale history keeps its own snapshots,
+-- but an accidental delete would still lose the record of the thing.
+-- ---------------------------------------------------------------------------
+
+alter table public.cash_movements
+  drop constraint if exists cash_movements_kind_check;
+alter table public.cash_movements
+  add constraint cash_movements_kind_check check (
+    kind in ('sale', 'restock', 'opening', 'investment', 'correction',
+             'void', 'refund', 'removal')
+  );
+
+alter table public.cash_movements
+  drop constraint if exists cash_direction;
+alter table public.cash_movements
+  add constraint cash_direction check (
+    (kind = 'sale'       and amount_cents >= 0) or
+    (kind = 'investment' and amount_cents >= 0) or
+    -- Stock leaving the inventory hands its money back, so this only ever comes in.
+    (kind = 'removal'    and amount_cents >= 0) or
+    (kind = 'restock'    and amount_cents <= 0) or
+    (kind = 'opening'    and amount_cents <= 0) or
+    (kind = 'void'       and amount_cents <= 0) or
+    (kind = 'refund'     and amount_cents <= 0) or
+    -- Found stock costs money, missing stock gives it back. Both are corrections.
+    (kind = 'correction')
+  );
+
+-- ---------------------------------------------------------------------------
+-- archive_product: take it off the shelves, and put the money back.
+-- ---------------------------------------------------------------------------
+create or replace function public.archive_product(
+  p_product_id uuid,
+  p_reason     text default null
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_product public.products%rowtype;
+  v_alloc   jsonb;
+  v_value   numeric := 0;
+  v_units   numeric := 0;
+begin
+  if auth.uid() is null then
+    raise exception 'You must be signed in to remove an article' using errcode = '42501';
+  end if;
+
+  select * into v_product from public.products where id = p_product_id for update;
+
+  if not found then
+    raise exception 'That product no longer exists' using errcode = '23503';
+  end if;
+
+  -- Already gone. Saying so quietly beats refusing a button someone tapped twice.
+  if not v_product.is_active then
+    return jsonb_build_object('units', 0, 'value_cents', 0, 'already_removed', true);
+  end if;
+
+  v_units := v_product.quantity_in_stock;
+
+  if v_units > 0 then
+    -- Priced from the batches, so an article holding stock bought at two different prices
+    -- gives back what was really paid rather than a blended guess.
+    perform public.reconcile_batches(p_product_id, v_units);
+    v_alloc := public.consume_batches(p_product_id, v_units);
+
+    select coalesce(sum((elem ->> 'quantity')::numeric
+                        * (elem ->> 'unit_cost_cents')::numeric), 0)
+      into v_value
+      from jsonb_array_elements(v_alloc) as elem;
+
+    update public.products set quantity_in_stock = 0 where id = p_product_id;
+
+    insert into public.stock_movements (product_id, delta, reason, note, created_by)
+    values (p_product_id, -v_units, 'adjustment',
+            coalesce(nullif(btrim(coalesce(p_reason, '')), ''), 'Removed from inventory'),
+            auth.uid());
+
+    if round(v_value) > 0 then
+      insert into public.cash_movements
+        (kind, amount_cents, product_id, product_name, note, created_by)
+      values ('removal', round(v_value), p_product_id, v_product.name,
+              coalesce(nullif(btrim(coalesce(p_reason, '')), ''), 'Removed from inventory'),
+              auth.uid());
+    end if;
+  end if;
+
+  update public.products set is_active = false where id = p_product_id;
+
+  return jsonb_build_object(
+    'units',           v_units,
+    'value_cents',     round(v_value),
+    'already_removed', false
+  );
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- The balance, with removals given their own line.
+-- ---------------------------------------------------------------------------
+drop function if exists public.report_budget();
+
+create or replace function public.report_budget()
+returns table (
+  balance_cents        bigint,
+  from_sales_cents     bigint,
+  spent_restock_cents  bigint,
+  spent_opening_cents  bigint,
+  invested_cents       bigint,
+  corrections_cents    bigint,
+  refunded_cents       bigint,
+  voided_cents         bigint,
+  removed_cents        bigint,
+  entry_count          bigint
+)
+language sql
+stable
+as $$
+  select
+    coalesce(sum(amount_cents), 0)::bigint,
+    coalesce(sum(amount_cents) filter (where kind = 'sale'), 0)::bigint,
+    coalesce(-sum(amount_cents) filter (where kind = 'restock'), 0)::bigint,
+    coalesce(-sum(amount_cents) filter (where kind = 'opening'), 0)::bigint,
+    coalesce(sum(amount_cents) filter (where kind = 'investment'), 0)::bigint,
+    coalesce(sum(amount_cents) filter (where kind = 'correction'), 0)::bigint,
+    coalesce(-sum(amount_cents) filter (where kind = 'refund'), 0)::bigint,
+    coalesce(-sum(amount_cents) filter (where kind = 'void'), 0)::bigint,
+    coalesce(sum(amount_cents) filter (where kind = 'removal'), 0)::bigint,
+    count(*)::bigint
+  from public.cash_movements;
+$$;
+
+do $$
+declare fn text;
+begin
+  foreach fn in array array[
+    'public.archive_product(uuid, text)',
+    'public.report_budget()'
+  ]
+  loop
+    execute format('revoke all on function %s from public, anon', fn);
+    execute format('grant execute on function %s to authenticated', fn);
+  end loop;
+end;
+$$;
+
+-- ==========================================================================
+-- 20260830090900_variants.sql
+-- ==========================================================================
+-- ---------------------------------------------------------------------------
+-- Articles that come in sizes and flavours.
+--
+-- Tobacco is not one article. It is a brand, a weight and a taste, and the shop stocks
+-- perhaps a dozen combinations of the three. Each one is genuinely its own article: its own
+-- barcode, its own price, its own count on the shelf. What they share is a name.
+--
+-- Typing that name out by hand is where it goes wrong. "Al Fakher 250g Double Apple" and
+-- "Al fakher 250 G double apple" are two rows in the catalogue and one thing in the shop,
+-- and once they have both been sold a few times no report can put them back together.
+--
+-- So the parts are kept apart and the name is assembled from them. The size comes off a list
+-- of buttons, the taste is typed once, and the article ends up named consistently because
+-- nobody had the chance to name it any other way.
+--
+-- Which categories work this way is data, not code. A category with no sizes behaves exactly
+-- as it always did, so nothing changes for Drinks or Bakery. Turning it on for another shelf
+-- is one UPDATE, without a release.
+-- ---------------------------------------------------------------------------
+
+-- The sizes offered for articles on this shelf. Empty or null means the shelf has none, and
+-- the form stays exactly as it is everywhere else.
+alter table public.categories
+  add column if not exists variant_sizes text[];
+
+-- What the free-text part is called on this shelf. Tobacco calls it a taste; another shelf
+-- might call it a colour or a scent, and the form asks using the shop's own word for it.
+alter table public.categories
+  add column if not exists variant_trait_label text;
+
+-- The parts an article's name was assembled from, kept so the form can take it apart again
+-- and put it back together when one of them is edited.
+alter table public.products
+  add column if not exists variant_size text;
+alter table public.products
+  add column if not exists variant_trait text;
+
+-- ---------------------------------------------------------------------------
+-- Tobacco, set up the way the shop actually sells it.
+--
+-- Matched on the name rather than an id, because the seeded categories are the shop's to
+-- rename or delete. Guarded so a shop that has already chosen its own sizes keeps them.
+-- ---------------------------------------------------------------------------
+update public.categories
+   set variant_sizes       = array['50g', '250g', '1kg'],
+       variant_trait_label = 'Taste'
+ where lower(name) = 'tobacco'
+   and variant_sizes is null;
+
+-- ---------------------------------------------------------------------------
+-- create_product, carrying the parts through.
+--
+-- The assembled name still arrives in p_name, because everything downstream — the till, the
+-- reports, the search box — reads one name and should carry on doing so. These two are
+-- recorded beside it so the article can be edited as parts rather than as a string.
+-- ---------------------------------------------------------------------------
+drop function if exists public.create_product(
+  text, text, uuid, integer, integer, numeric, numeric, text, text, text
+);
+
+create or replace function public.create_product(
+  p_barcode             text,
+  p_name                text,
+  p_category_id         uuid,
+  p_cost_price_cents    integer,
+  p_sale_price_cents    integer,
+  p_quantity            numeric,
+  p_low_stock_threshold numeric,
+  p_unit                text,
+  p_notes               text,
+  p_funding             text default 'budget',
+  p_variant_size        text default null,
+  p_variant_trait       text default null
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'You must be signed in to add an article' using errcode = '42501';
+  end if;
+
+  if p_funding not in ('budget', 'outside') then
+    raise exception 'Unknown funding source %', p_funding using errcode = '22023';
+  end if;
+
+  if length(btrim(coalesce(p_name, ''))) = 0 then
+    raise exception 'Give the article a name' using errcode = '22023';
+  end if;
+
+  if coalesce(p_quantity, 0) < 0 then
+    raise exception 'Opening stock cannot be less than nothing' using errcode = '22023';
+  end if;
+
+  -- The shelf starts empty and is filled by adjust_stock below, so the opening stock leaves
+  -- the same ledger trail every later delivery does.
+  insert into public.products (
+    barcode, name, category_id, cost_price_cents, sale_price_cents,
+    quantity_in_stock, low_stock_threshold, unit, notes, last_cost_price_cents,
+    variant_size, variant_trait
+  ) values (
+    nullif(btrim(coalesce(p_barcode, '')), ''),
+    btrim(p_name),
+    p_category_id,
+    greatest(coalesce(p_cost_price_cents, 0), 0),
+    greatest(coalesce(p_sale_price_cents, 0), 0),
+    0,
+    greatest(coalesce(p_low_stock_threshold, 0), 0),
+    coalesce(nullif(btrim(coalesce(p_unit, '')), ''), 'piece'),
+    nullif(btrim(coalesce(p_notes, '')), ''),
+    case when coalesce(p_quantity, 0) > 0 then greatest(coalesce(p_cost_price_cents, 0), 0) end,
+    nullif(btrim(coalesce(p_variant_size, '')), ''),
+    nullif(btrim(coalesce(p_variant_trait, '')), '')
+  )
+  returning id into v_id;
+
+  -- Where the article started, so the price trail has a beginning rather than appearing to
+  -- spring into existence at the first delivery.
+  insert into public.product_price_history (
+    product_id, source, quantity, stock_before, stock_after, purchase_cost_cents,
+    old_cost_cents, new_cost_cents, old_sale_price_cents, new_sale_price_cents,
+    note, created_by
+  ) values (
+    v_id, 'opening', coalesce(p_quantity, 0), 0, coalesce(p_quantity, 0),
+    greatest(coalesce(p_cost_price_cents, 0), 0),
+    greatest(coalesce(p_cost_price_cents, 0), 0), greatest(coalesce(p_cost_price_cents, 0), 0),
+    greatest(coalesce(p_sale_price_cents, 0), 0), greatest(coalesce(p_sale_price_cents, 0), 0),
+    'Article added', auth.uid()
+  );
+
+  if coalesce(p_quantity, 0) > 0 then
+    perform public.adjust_stock(
+      v_id,
+      p_quantity,
+      'initial',
+      'Opening stock',
+      greatest(coalesce(p_cost_price_cents, 0), 0),
+      p_funding,
+      null
+    );
+  end if;
+
+  return v_id;
+end;
+$$;
+
+revoke all on function public.create_product(
+  text, text, uuid, integer, integer, numeric, numeric, text, text, text, text, text
+) from public, anon;
+grant execute on function public.create_product(
+  text, text, uuid, integer, integer, numeric, numeric, text, text, text, text, text
+) to authenticated;

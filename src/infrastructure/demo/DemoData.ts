@@ -7,6 +7,9 @@ export const DEMO_CATEGORIES: Category[] = [
   new Category('c3', 'Groceries', '#22c55e', 30),
   new Category('c4', 'Bakery', '#d97706', 40),
   new Category('c5', 'Household', '#8b5cf6', 50),
+  // Sold by weight and taste, so the form assembles the name from parts rather than
+  // trusting anyone to type "Al Fakher 250g Double Apple" the same way twice.
+  new Category('c6', 'Tobacco', '#78716c', 60, true, ['50g', '250g', '1kg'], 'Taste'),
 ];
 
 interface Seed {

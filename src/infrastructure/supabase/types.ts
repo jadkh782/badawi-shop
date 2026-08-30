@@ -20,6 +20,8 @@ export interface ProductRow {
   updated_at: string;
   /** The price the last delivery was charged at, kept apart from the costing figure. */
   last_cost_price_cents: number | null;
+  variant_size: string | null;
+  variant_trait: string | null;
   categories?: { name: string } | null;
 }
 
@@ -29,6 +31,9 @@ export interface CategoryRow {
   color: string;
   sort_order: number;
   is_active: boolean;
+  /** Null on shelves that do not come in sizes, which is most of them. */
+  variant_sizes: string[] | null;
+  variant_trait_label: string | null;
 }
 
 export interface SaleRow {
@@ -163,6 +168,7 @@ export interface BudgetRow {
   corrections_cents: number;
   refunded_cents: number;
   voided_cents: number;
+  removed_cents: number;
   entry_count: number;
 }
 

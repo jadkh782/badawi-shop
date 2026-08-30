@@ -65,11 +65,21 @@ export function toProduct(row: ProductRow): Product {
     unit: row.unit,
     notes: row.notes,
     isActive: row.is_active,
+    variantSize: row.variant_size ?? null,
+    variantTrait: row.variant_trait ?? null,
   });
 }
 
 export function toCategory(row: CategoryRow): Category {
-  return new Category(row.id, row.name, row.color, num(row.sort_order), row.is_active);
+  return new Category(
+    row.id,
+    row.name,
+    row.color,
+    num(row.sort_order),
+    row.is_active,
+    row.variant_sizes ?? [],
+    row.variant_trait_label ?? null,
+  );
 }
 
 export function toSettings(row: AppSettingsRow): ShopSettings {
@@ -154,6 +164,7 @@ export function toBudget(row: BudgetRow | undefined): BudgetSummary {
     Money.fromCents(num(row.corrections_cents)),
     Money.fromCents(num(row.refunded_cents)),
     Money.fromCents(num(row.voided_cents)),
+    Money.fromCents(num(row.removed_cents)),
     num(row.entry_count),
   );
 }

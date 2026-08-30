@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { BudgetSummary, Category, Product } from '@/domain';
+import type { BudgetSummary, Category } from '@/domain';
+import { Product } from '@/domain';
 import { Money } from '@/domain';
 import type { ProductFormInput } from '@/application/use-cases';
 import { SaveProduct } from '@/application/use-cases';
@@ -24,6 +25,8 @@ export function emptyForm(barcode = ''): ProductFormInput {
     lowStockThreshold: '2',
     unit: 'piece',
     notes: '',
+    variantSize: '',
+    variantTrait: '',
     funding: 'budget',
   };
 }
@@ -31,7 +34,9 @@ export function emptyForm(barcode = ''): ProductFormInput {
 export function formFrom(product: Product): ProductFormInput {
   return {
     barcode: product.barcode?.value ?? '',
-    name: product.name,
+    // The brand on its own. The size and taste are edited as themselves below, and the
+    // stored name is reassembled from all three on save.
+    name: product.brandName,
     categoryId: product.categoryId,
     costPrice: product.costPrice.dollars.toFixed(2),
     salePrice: product.salePrice.dollars.toFixed(2),
@@ -39,6 +44,8 @@ export function formFrom(product: Product): ProductFormInput {
     lowStockThreshold: String(product.lowStockThreshold.value),
     unit: product.unit,
     notes: product.notes ?? '',
+    variantSize: product.variantSize ?? '',
+    variantTrait: product.variantTrait ?? '',
     // Editing an article never spends anything, so this is only ever read on create.
     funding: 'budget',
   };
@@ -88,6 +95,12 @@ export function ProductForm({
 
   const set = (patch: Partial<ProductFormInput>) => onChange({ ...value, ...patch });
 
+  const shelf = categories.find((category) => category.id === value.categoryId) ?? null;
+  // Only shelves that say they come in sizes get the extra fields. Everywhere else the form
+  // is exactly what it always was.
+  const variantShelf = shelf?.hasVariants ? shelf : null;
+  const assembled = Product.assembleName(value.name, value.variantSize, value.variantTrait);
+
   const margin = useMemo(() => {
     try {
       const cost = Money.fromInput(value.costPrice);
@@ -132,13 +145,13 @@ export function ProductForm({
 
       <div>
         <label className="eyebrow" htmlFor="name">
-          Name
+          {variantShelf ? 'Brand' : 'Name'}
         </label>
         <input
           id="name"
           value={value.name}
           onChange={(event) => set({ name: event.target.value })}
-          placeholder="What is on the label"
+          placeholder={variantShelf ? 'Al Fakher' : 'What is on the label'}
           className="field mt-2"
           required
         />
@@ -153,9 +166,14 @@ export function ProductForm({
               type="button"
               className="chip"
               data-active={value.categoryId === category.id}
-              onClick={() =>
-                set({ categoryId: value.categoryId === category.id ? null : category.id })
-              }
+              onClick={() => {
+                const next = value.categoryId === category.id ? null : category.id;
+                const keeps = categories.find((c) => c.id === next)?.hasVariants ?? false;
+                set({
+                  categoryId: next,
+                  ...(keeps ? {} : { variantSize: '', variantTrait: '' }),
+                });
+              }}
             >
               <span
                 className="h-2.5 w-2.5 rounded-full"
@@ -167,6 +185,44 @@ export function ProductForm({
           ))}
         </div>
       </div>
+
+      {variantShelf && (
+        <div>
+          <p className="eyebrow">Size</p>
+          <div className="strip -mx-4 mt-2 px-4 pb-1">
+            {variantShelf.variantSizes.map((size) => (
+              <button
+                key={size}
+                type="button"
+                className="chip"
+                data-active={value.variantSize === size}
+                onClick={() => set({ variantSize: value.variantSize === size ? '' : size })}
+              >
+                {size}
+              </button>
+            ))}
+          </div>
+
+          <label className="eyebrow mt-4 block" htmlFor="trait">
+            {variantShelf.variantTraitLabel ?? 'Variety'}
+          </label>
+          <input
+            id="trait"
+            value={value.variantTrait}
+            onChange={(event) => set({ variantTrait: event.target.value })}
+            placeholder="Double Apple"
+            className="field mt-2"
+          />
+
+          {/* Shown because the article is filed under the assembled name, and a name that
+              appears only after saving is a name nobody checked. */}
+          {assembled.trim() !== '' && (
+            <p className="mt-3 rounded-xl bg-[var(--color-ink)] px-3 py-2 text-xs leading-relaxed text-[var(--color-muted)]">
+              Filed as <b className="text-[var(--color-paper)]">{assembled}</b>
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:gap-4">
         <div>

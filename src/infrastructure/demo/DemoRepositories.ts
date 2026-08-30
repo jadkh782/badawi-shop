@@ -35,6 +35,7 @@ import type {
   ResetCounts,
   ShopUser,
   StockChange,
+  ArchiveResult,
   StockChangeResult,
   VoidResult,
 } from '@/application/ports';
@@ -102,8 +103,9 @@ export class DemoProductRepository implements IProductRepository {
     );
   }
 
-  async archive(id: string): Promise<void> {
-    store().products = store().products.filter((p) => p.id !== id);
+  async archive(id: string, reason?: string): Promise<ArchiveResult> {
+    // The same money rule as the database, so the demo teaches the real behaviour.
+    return store().archive(id, reason ?? null);
   }
 
   async adjustStock(id: string, change: StockChange): Promise<StockChangeResult> {
@@ -233,6 +235,7 @@ export class DemoBudgetRepository implements IBudgetRepository {
       of('correction'),
       out('refund'),
       out('void'),
+      of('removal'),
       cash.length,
     );
   }

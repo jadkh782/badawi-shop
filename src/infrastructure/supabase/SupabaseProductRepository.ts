@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { Barcode, DuplicateBarcodeError, type PriceChange, type Product, type StockBatch } from '@/domain';
 import type {
+  ArchiveResult,
   IProductRepository,
   ProductDraft,
   ProductQuery,
@@ -90,6 +91,8 @@ export class SupabaseProductRepository implements IProductRepository {
       p_unit: draft.unit,
       p_notes: draft.notes,
       p_funding: draft.funding ?? 'budget',
+      p_variant_size: draft.variantSize ?? null,
+      p_variant_trait: draft.variantTrait ?? null,
     });
     if (error) throw asDuplicate(error, draft.barcode);
 
@@ -111,11 +114,22 @@ export class SupabaseProductRepository implements IProductRepository {
     return toProduct(data as ProductRow);
   }
 
-  async archive(id: string): Promise<void> {
+  async archive(id: string, reason?: string): Promise<ArchiveResult> {
     // Archived rather than deleted: sale history keeps its own snapshots, but an accidental
-    // delete would still lose the article itself.
-    const { error } = await this.db.from('products').update({ is_active: false }).eq('id', id);
+    // delete would still lose the article itself. Going through the function rather than
+    // flipping the column is what puts the money for the remaining stock back in the budget.
+    const { data, error } = await this.db.rpc('archive_product', {
+      p_product_id: id,
+      p_reason: reason ?? null,
+    });
     if (error) throw translateError(error);
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    return {
+      units: Number(row.units ?? 0),
+      valueCents: Number(row.value_cents ?? 0),
+      alreadyRemoved: Boolean(row.already_removed),
+    };
   }
 
   async adjustStock(id: string, change: StockChange): Promise<StockChangeResult> {
@@ -156,6 +170,8 @@ function toRow(draft: ProductDraft): Record<string, unknown> {
     low_stock_threshold: draft.lowStockThreshold,
     unit: draft.unit,
     notes: draft.notes,
+    variant_size: draft.variantSize ?? null,
+    variant_trait: draft.variantTrait ?? null,
   };
 }
 

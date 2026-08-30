@@ -42,6 +42,12 @@ export interface ProductDraft {
   unit: string;
   notes: string | null;
   /**
+   * The parts the name was assembled from, on shelves that work that way. Kept so the form
+   * can take the name apart again rather than asking anyone to retype it.
+   */
+  variantSize?: string | null;
+  variantTrait?: string | null;
+  /**
    * Who paid for the opening stock. Only meaningful on create: the first stock of an article
    * is a purchase, and the books have to say whose money bought it.
    */
@@ -75,11 +81,27 @@ export interface StockChangeResult {
   salePriceChanged: boolean;
 }
 
+/** What removing an article gave back. */
+export interface ArchiveResult {
+  /** Units that came off the shelf. */
+  units: number;
+  /** What those units cost, returned to the budget. */
+  valueCents: number;
+  /** True when the article had already been removed, so nothing moved. */
+  alreadyRemoved: boolean;
+}
+
 /** Write access, used only by Inventory mode. */
 export interface IProductWriter {
   create(draft: ProductDraft): Promise<Product>;
   update(id: string, draft: ProductDraft): Promise<Product>;
-  archive(id: string): Promise<void>;
+  /**
+   * Takes the article off the shelves and hands back what its remaining stock cost.
+   *
+   * Removing an article that still holds stock is a purchase being undone, so the money goes
+   * back into the budget rather than the stock quietly ceasing to exist.
+   */
+  archive(id: string, reason?: string): Promise<ArchiveResult>;
   /**
    * Moves stock, writes the ledger entry, restates the cost and moves the money, all in one
    * transaction.

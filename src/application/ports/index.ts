@@ -5,6 +5,7 @@ export type {
   ProductDraft,
   ProductQuery,
   StockChange,
+  ArchiveResult,
   StockChangeResult,
   RestockFunding,
 } from './IProductRepository';

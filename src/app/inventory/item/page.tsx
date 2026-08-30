@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
-import type { Product } from '@/domain';
+import { Money, type Product } from '@/domain';
 import type { ProductFormInput } from '@/application/use-cases';
 import { container } from '@/container';
 import { messageFor } from '@/infrastructure/supabase/errors';
@@ -75,8 +75,17 @@ function EditProduct() {
     if (!product) return;
     setBusy(true);
     try {
-      await container().products.archive(product.id);
-      notify(`${product.name} removed from inventory`, 'success');
+      const result = await container().products.archive(product.id);
+      const back = Money.fromCents(result.valueCents);
+      notify(
+        // Money moving is worth saying out loud. Removing an article that still held stock
+        // puts what it cost back in the budget, and a silent balance change is the kind of
+        // thing that gets noticed a week later and cannot be explained.
+        back.isZero()
+          ? `${product.name} removed from inventory`
+          : `${product.name} removed, ${back.format()} back in the budget`,
+        'success',
+      );
       router.push('/inventory');
     } catch (error) {
       notify(messageFor(error), 'error');
@@ -84,6 +93,9 @@ function EditProduct() {
       setBusy(false);
     }
   }
+
+  /** What removing it would hand back, so the button can say so before it is tapped. */
+  const refundOnRemoval = product ? product.costPrice.multiply(product.stock.value) : Money.zero();
 
   if (notFound) {
     return (
@@ -152,11 +164,22 @@ function EditProduct() {
         <ProductForm value={form} onChange={setForm} showQuantity={false} />
 
         <div className="px-4 pb-8">
-          <button type="button" className="btn btn-danger w-full" onClick={() => void archive()}>
-            Remove from inventory
+          <button
+            type="button"
+            className="btn btn-danger w-full"
+            disabled={busy}
+            onClick={() => void archive()}
+          >
+            {refundOnRemoval.isZero()
+              ? 'Remove from inventory'
+              : `Remove, ${refundOnRemoval.format()} back`}
           </button>
-          <p className="mt-2 text-center text-xs text-[var(--color-faint)]">
-            Past sales keep their own record, so reports stay correct.
+          <p className="mt-2 text-center text-xs leading-relaxed text-[var(--color-faint)]">
+            {refundOnRemoval.isZero()
+              ? 'Past sales keep their own record, so reports stay correct.'
+              : `The ${product.stock.format()} ${product.unit} still on the shelf cost ` +
+                `${refundOnRemoval.format()}, which goes back into the budget. Past sales keep ` +
+                'their own record, so reports stay correct.'}
           </p>
         </div>
       </AppShell>

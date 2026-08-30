@@ -606,6 +606,98 @@ const soldLines = await all('select * from get_sale_lines($1)', [returned.id]);
 eq('a sale line reports how much of it has already gone back',
   soldLines[0].refunded_quantity, '2.000');
 
+// --- removing an article ----------------------------------------------------
+console.log('\nremoving an article');
+
+const boxR0 = await budget();
+const doomedItem = await one(
+  `select create_product('BC-Gone', 'Going', $1, 400, 900, 7, 1, 'piece', null, 'budget') as id`,
+  [cat.id],
+);
+const boxR1 = await budget();
+eq('buying the stock took money out', Number(boxR0.balance_cents) - Number(boxR1.balance_cents), 2800);
+
+const gone = await one(`select archive_product($1, 'discontinued') as r`, [doomedItem.id]);
+const boxR2 = await budget();
+
+eq('removing it hands back what its stock cost', Number(gone.r.value_cents), 2800);
+eq('all seven units came off the shelf', Number(gone.r.units), 7);
+eq('so the balance returns to where it started', boxR2.balance_cents, boxR0.balance_cents);
+eq('the shelf is emptied',
+  (await one('select quantity_in_stock q from products where id = $1', [doomedItem.id])).q, '0.000');
+eq('the article is archived rather than deleted',
+  (await one('select is_active a from products where id = $1', [doomedItem.id])).a, false);
+eq('and the money back is its own kind in the ledger',
+  Number(boxR2.removed_cents) - Number(boxR0.removed_cents), 2800);
+
+/*
+  Priced from the batches, not from today's average. Bought at two prices, removed once: what
+  comes back has to be what was actually paid, or the balance quietly drifts by the spread.
+*/
+const twoPrice = await one(
+  `select create_product('BC-Spread', 'Spread', $1, 100, 500, 10, 1, 'piece', null, 'budget') as id`,
+  [cat.id],
+);
+await db.query(`select set_cost_method('batch')`);
+await db.query(`select adjust_stock($1, 10, 'restock', null, 300, 'budget')`, [twoPrice.id]);
+const spreadBack = await one(`select archive_product($1, null) as r`, [twoPrice.id]);
+eq('a removal spanning two prices gives back both, not a blend',
+  Number(spreadBack.r.value_cents), 10 * 100 + 10 * 300);
+await db.query(`select set_cost_method('average')`);
+
+const twice = await one(`select archive_product($1, null) as r`, [doomedItem.id]);
+eq('removing an already removed article is a quiet no-op', twice.r.already_removed, true);
+eq('and takes no further money', (await budget()).balance_cents, boxR2.balance_cents);
+
+const emptyOne = await one(
+  `select create_product('BC-Empty', 'Empty', $1, 400, 900, 0, 1, 'piece', null, 'budget') as id`,
+  [cat.id],
+);
+const boxR3 = await budget();
+await db.query(`select archive_product($1, null)`, [emptyOne.id]);
+eq('removing an article holding nothing moves no money',
+  (await budget()).balance_cents, boxR3.balance_cents);
+
+// --- articles that come in sizes and flavours -------------------------------
+console.log('\nvariants');
+
+const tobacco = await one(`select * from categories where lower(name) = 'tobacco'`);
+check('tobacco is set up with the sizes the shop sells',
+  JSON.stringify(tobacco.variant_sizes) === JSON.stringify(['50g', '250g', '1kg']),
+  JSON.stringify(tobacco.variant_sizes));
+eq('and calls its free-text part a taste', tobacco.variant_trait_label, 'Taste');
+
+const shisha = await one(
+  `select create_product('BC-AF250', 'Al Fakher 250g Double Apple', $1, 500, 900, 4, 1,
+                         'piece', null, 'budget', '250g', 'Double Apple') as id`,
+  [tobacco.id],
+);
+const shishaRow = await one('select * from products where id = $1', [shisha.id]);
+eq('the assembled name is what the catalogue carries',
+  shishaRow.name, 'Al Fakher 250g Double Apple');
+eq('the size is kept apart so the form can edit it', shishaRow.variant_size, '250g');
+eq('and so is the taste', shishaRow.variant_trait, 'Double Apple');
+
+const sameBrand = await one(
+  `select create_product('BC-AF50', 'Al Fakher 50g Mint', $1, 200, 400, 6, 1,
+                         'piece', null, 'budget', '50g', 'Mint') as id`,
+  [tobacco.id],
+);
+eq('a different size is a different article with its own stock',
+  (await one('select quantity_in_stock q from products where id = $1', [sameBrand.id])).q, '6.000');
+eq('the two do not collide', (await one(
+  `select count(*) c from products where name like 'Al Fakher%' and is_active`)).c, 2);
+
+check('a shelf with no sizes is untouched by any of this',
+  (await one('select variant_sizes v from categories where id = $1', [cat.id])).v === null);
+
+const plain = await one(
+  `select create_product('BC-Plain', 'Plain', $1, 100, 200, 1, 1, 'piece', null, 'budget') as id`,
+  [cat.id],
+);
+eq('and an article on it carries no size', (await one(
+  'select variant_size v from products where id = $1', [plain.id])).v, null);
+
 // --- reset -----------------------------------------------------------------
 console.log('\nreset');
 

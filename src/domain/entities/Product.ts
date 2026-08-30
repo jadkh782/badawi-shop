@@ -20,6 +20,9 @@ export interface ProductProps {
   unit: string;
   notes: string | null;
   isActive: boolean;
+  /** The parts the name was assembled from, on shelves that come in sizes. */
+  variantSize?: string | null;
+  variantTrait?: string | null;
 }
 
 /**
@@ -42,6 +45,8 @@ export class Product {
   readonly unit: string;
   readonly notes: string | null;
   readonly isActive: boolean;
+  readonly variantSize: string | null;
+  readonly variantTrait: string | null;
 
   constructor(props: ProductProps) {
     this.id = props.id;
@@ -57,6 +62,37 @@ export class Product {
     this.unit = props.unit;
     this.notes = props.notes;
     this.isActive = props.isActive;
+    this.variantSize = props.variantSize ?? null;
+    this.variantTrait = props.variantTrait ?? null;
+  }
+
+  /**
+   * The name with its parts spelled out.
+   *
+   * The stored name is already assembled, so this normally just returns it. It reassembles
+   * only when the parts are present and the name has not caught up with them, which is what
+   * makes an article edited through the form read correctly before it is saved.
+   */
+  static assembleName(name: string, size?: string | null, trait?: string | null): string {
+    return [name.trim(), size?.trim(), trait?.trim()].filter(Boolean).join(' ');
+  }
+
+  /**
+   * The brand on its own, with the assembled parts taken back off.
+   *
+   * Exact rather than clever: the parts were appended verbatim when the name was built, so
+   * they come off verbatim. A name that has since been edited by hand will not match, and
+   * then the whole thing is returned unchanged rather than being guessed at and mangled.
+   */
+  static stripVariant(name: string, size?: string | null, trait?: string | null): string {
+    const suffix = [size?.trim(), trait?.trim()].filter(Boolean).join(' ');
+    if (!suffix) return name;
+    return name.endsWith(` ${suffix}`) ? name.slice(0, -(suffix.length + 1)) : name;
+  }
+
+  /** The brand without its size and taste, which is what the form edits. */
+  get brandName(): string {
+    return Product.stripVariant(this.name, this.variantSize, this.variantTrait);
   }
 
   /** Profit on a single unit at the current prices. */

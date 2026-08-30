@@ -327,3 +327,53 @@ describe('DateRange', () => {
     expect(() => DateRange.fromDateStrings('2026-08-31', '2026-08-01')).toThrow(DomainError);
   });
 });
+
+/*
+  The naming rule for shelves that come in sizes.
+
+  Worth pinning down, because it is the only thing standing between the catalogue and two
+  rows for one article. Assemble and strip have to be exact inverses or an article edited
+  twice grows a second copy of its own size.
+*/
+describe('variant names', () => {
+  it('assembles a name from its parts', () => {
+    expect(Product.assembleName('Al Fakher', '250g', 'Double Apple')).toBe(
+      'Al Fakher 250g Double Apple',
+    );
+  });
+
+  it('leaves a name alone when the shelf has no sizes', () => {
+    expect(Product.assembleName('Cola 1L', null, null)).toBe('Cola 1L');
+  });
+
+  it('skips a part that was not filled in', () => {
+    expect(Product.assembleName('Al Fakher', '50g', '')).toBe('Al Fakher 50g');
+    expect(Product.assembleName('Al Fakher', '', 'Mint')).toBe('Al Fakher Mint');
+  });
+
+  it('trims what it is given rather than trusting it', () => {
+    expect(Product.assembleName('  Al Fakher ', ' 250g ', ' Mint ')).toBe('Al Fakher 250g Mint');
+  });
+
+  it('strips the parts back off to recover the brand', () => {
+    expect(Product.stripVariant('Al Fakher 250g Double Apple', '250g', 'Double Apple')).toBe(
+      'Al Fakher',
+    );
+  });
+
+  it('is an exact inverse, so editing twice does not double the size', () => {
+    const stored = Product.assembleName('Al Fakher', '250g', 'Mint');
+    const brand = Product.stripVariant(stored, '250g', 'Mint');
+    expect(Product.assembleName(brand, '250g', 'Mint')).toBe(stored);
+  });
+
+  it('leaves a hand-edited name whole rather than mangling it', () => {
+    expect(Product.stripVariant('Something Else Entirely', '250g', 'Mint')).toBe(
+      'Something Else Entirely',
+    );
+  });
+
+  it('does not strip a brand that merely ends in similar words', () => {
+    expect(Product.stripVariant('Mint', '', 'Mint')).toBe('Mint');
+  });
+});

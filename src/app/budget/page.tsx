@@ -160,6 +160,14 @@ export default function BudgetPage() {
                 tone="var(--color-danger)"
               />
             )}
+            {summary && !summary.removed.isZero() && (
+              <Figure
+                label="Back from articles removed"
+                value={summary.removed.format()}
+                tone="var(--color-stock)"
+                hint="What the stock of a removed article had cost, returned to the budget"
+              />
+            )}
             <div className="border-t border-[var(--color-line)] pt-3">
               <Figure
                 label="Earned by the shop itself"

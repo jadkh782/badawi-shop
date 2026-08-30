@@ -4,6 +4,9 @@ export interface CategoryDraft {
   name: string;
   color: string;
   sortOrder: number;
+  /** Sizes offered on this shelf. Empty leaves the shelf working the ordinary way. */
+  variantSizes?: readonly string[];
+  variantTraitLabel?: string | null;
 }
 
 export interface ICategoryRepository {

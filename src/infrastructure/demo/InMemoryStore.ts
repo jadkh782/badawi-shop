@@ -18,7 +18,13 @@ import {
   CashMovement,
 } from '@/domain';
 import type { BatchSource, CashKind, CostMethod, PriceChangeSource } from '@/domain';
-import type { ProductDraft, RefundLine, StockChange, StockChangeResult } from '@/application/ports';
+import type {
+  ArchiveResult,
+  ProductDraft,
+  RefundLine,
+  StockChange,
+  StockChangeResult,
+} from '@/application/ports';
 import { DEMO_CATEGORIES, demoProducts } from './DemoData';
 
 /** A batch as the store holds it: mutable, unlike the value object the app reads. */
@@ -127,9 +133,20 @@ export class InMemoryStore {
     return this.rebuild(product, { stock });
   }
 
+  /** Archived rather than dropped, so the demo keeps the record the way the database does. */
+  private deactivate(product: Product): Product {
+    return this.rebuild(product, { isActive: false });
+  }
+
   private rebuild(
     product: Product,
-    patch: { stock?: number; costCents?: number; saleCents?: number; lastCostCents?: number },
+    patch: {
+      stock?: number;
+      costCents?: number;
+      saleCents?: number;
+      lastCostCents?: number;
+      isActive?: boolean;
+    },
   ): Product {
     return new Product({
       id: product.id,
@@ -149,7 +166,9 @@ export class InMemoryStore {
       lowStockThreshold: product.lowStockThreshold,
       unit: product.unit,
       notes: product.notes,
-      isActive: product.isActive,
+      isActive: patch.isActive ?? product.isActive,
+      variantSize: product.variantSize,
+      variantTrait: product.variantTrait,
     });
   }
 
@@ -299,6 +318,37 @@ export class InMemoryStore {
   // Stock, priced.
   // ---------------------------------------------------------------------------
 
+  /**
+   * Removing an article, and handing back what its stock cost.
+   *
+   * Priced from the batches rather than from today's average, so an article holding stock
+   * bought at two prices gives back what was really paid for each of them.
+   */
+  archive(productId: string, reason: string | null): ArchiveResult {
+    const existing = this.products.find((p) => p.id === productId);
+    if (!existing) throw new Error('That product no longer exists');
+    if (!existing.isActive) return { units: 0, valueCents: 0, alreadyRemoved: true };
+
+    const units = existing.stock.value;
+    let valueCents = 0;
+
+    if (units > 0) {
+      this.reconcile(productId, units);
+      valueCents = Math.round(
+        this.consume(productId, units).reduce((n, a) => n + a.quantity * a.unitCostCents, 0),
+      );
+      if (valueCents > 0) {
+        this.recordCash('removal', Money.fromCents(valueCents), existing.name, reason);
+      }
+    }
+
+    this.products = this.products.map((p) =>
+      p.id === productId ? this.rebuild(p, { stock: 0, isActive: false }) : p,
+    );
+
+    return { units, valueCents, alreadyRemoved: false };
+  }
+
   adjust(productId: string, change: StockChange): StockChangeResult {
     const existing = this.products.find((p) => p.id === productId);
     if (!existing) throw new Error('That product no longer exists');
@@ -407,6 +457,8 @@ export class InMemoryStore {
       unit: draft.unit,
       notes: draft.notes,
       isActive: true,
+      variantSize: draft.variantSize ?? null,
+      variantTrait: draft.variantTrait ?? null,
     });
     this.products.push(product);
 

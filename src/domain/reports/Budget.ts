@@ -7,7 +7,8 @@ export type CashKind =
   | 'investment'
   | 'correction'
   | 'void'
-  | 'refund';
+  | 'refund'
+  | 'removal';
 
 /**
  * What is in the cash box and how it got there.
@@ -16,9 +17,9 @@ export type CashKind =
  * one. Money the owner puts in from their own pocket is counted separately, so the shop can
  * tell what it has earned apart from what has been propped up.
  *
- * Four of these are new and each is a way money moved that the box used to ignore: the first
- * stock of a new article, a miscount found on the shelf, a sale rung up in error, and goods
- * handed back over the counter.
+ * Five of these are ways money moved that the box used to ignore: the first stock of a new
+ * article, a miscount found on the shelf, a sale rung up in error, goods handed back over the
+ * counter, and an article taken out of the inventory while it still held stock.
  */
 export class BudgetSummary {
   constructor(
@@ -31,12 +32,14 @@ export class BudgetSummary {
     readonly corrections: Money,
     readonly refunded: Money,
     readonly voided: Money,
+    /** Given back by articles removed from the inventory while they still held stock. */
+    readonly removed: Money,
     readonly entryCount: number,
   ) {}
 
   static empty(): BudgetSummary {
     const zero = Money.zero();
-    return new BudgetSummary(zero, zero, zero, zero, zero, zero, zero, zero, 0);
+    return new BudgetSummary(zero, zero, zero, zero, zero, zero, zero, zero, zero, 0);
   }
 
   /** True when more has gone out than has come in, which the screen shows in red. */
@@ -126,6 +129,10 @@ export class CashMovement {
           : 'Stock correction';
       case 'opening':
         return this.productName ? `First stock, ${this.productName}` : 'First stock';
+      case 'removal':
+        return this.productName
+          ? `Removed from inventory, ${this.productName}`
+          : 'Removed from inventory';
       case 'restock':
         return this.productName ? `Delivery, ${this.productName}` : 'Delivery';
     }
