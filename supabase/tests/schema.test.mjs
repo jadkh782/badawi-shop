@@ -711,9 +711,27 @@ check('nothing was deleted by the refused attempts',
 const removed = await one(`select reset_shop('RESET') as counts`);
 check('reset reports what it removed', Number(removed.counts.sales) > 0, JSON.stringify(removed.counts));
 
-for (const table of ['sales', 'sale_items', 'stock_movements', 'cash_movements', 'products', 'categories']) {
+for (const table of ['sales', 'sale_items', 'stock_movements', 'cash_movements', 'products']) {
   eq(`${table} is empty afterwards`, (await one(`select count(*) c from ${table}`)).c, 0);
 }
+
+/*
+  Categories are the exception, and deliberately so. A reset means starting again from empty,
+  and a brand new shop is not empty of shelves: it opens with the same set the schema gives
+  it. Wiping them left a shop that could not take a sale until nine categories had been typed
+  back in, and took Tobacco's sizes with it when it went.
+*/
+eq('but the starting shelves come back, so the shop is usable',
+  (await one('select count(*) c from categories')).c, 9);
+const freshTobacco = await one(`select * from categories where lower(name) = 'tobacco'`);
+check('and tobacco still knows the sizes it sells',
+  JSON.stringify(freshTobacco.variant_sizes) === JSON.stringify(['50g', '250g', '1kg']),
+  JSON.stringify(freshTobacco.variant_sizes));
+eq('and what it calls its varieties', freshTobacco.variant_trait_label, 'Taste');
+
+// Called twice, nothing doubles: the shelves are matched on name, not blindly inserted.
+await db.query('select seed_default_categories()');
+eq('seeding again adds nothing', (await one('select count(*) c from categories')).c, 9);
 eq('the settings row survives, so the rate need not be typed back in',
   (await one('select count(*) c from app_settings')).c, 1);
 eq('and the budget reads as a fresh shop', (await budget()).balance_cents, 0);

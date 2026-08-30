@@ -119,13 +119,13 @@ export class DemoCategoryRepository implements ICategoryRepository {
   }
 
   async create(draft: CategoryDraft): Promise<Category> {
-    const category = new Category(store().nextId('c'), draft.name, draft.color, draft.sortOrder);
+    const category = build(store().nextId('c'), draft);
     store().categories.push(category);
     return category;
   }
 
   async update(id: string, draft: CategoryDraft): Promise<Category> {
-    const next = new Category(id, draft.name, draft.color, draft.sortOrder);
+    const next = build(id, draft);
     store().categories = store().categories.map((c) => (c.id === id ? next : c));
     return next;
   }
@@ -133,6 +133,23 @@ export class DemoCategoryRepository implements ICategoryRepository {
   async remove(id: string): Promise<void> {
     store().categories = store().categories.filter((c) => c.id !== id);
   }
+}
+
+/**
+ * One shape for both writes, matching what the database stores: a shelf with no sizes keeps
+ * no trait label either, so "does this shelf come in sizes" has a single answer.
+ */
+function build(id: string, draft: CategoryDraft): Category {
+  const sizes = (draft.variantSizes ?? []).map((size) => size.trim()).filter(Boolean);
+  return new Category(
+    id,
+    draft.name,
+    draft.color,
+    draft.sortOrder,
+    true,
+    sizes,
+    sizes.length > 0 ? (draft.variantTraitLabel?.trim() || 'Variety') : null,
+  );
 }
 
 export class DemoSaleRepository implements ISaleRepository {

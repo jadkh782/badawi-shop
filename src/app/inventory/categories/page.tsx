@@ -22,6 +22,10 @@ export default function CategoriesPage() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [color, setColor] = useState(COLORS[0] as string);
+  // Sizes are edited as one comma separated line. A shelf that comes in sizes has three or
+  // four of them, and a list that short is quicker to type than it is to manage with buttons.
+  const [sizes, setSizes] = useState('');
+  const [traitLabel, setTraitLabel] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function load() {
@@ -41,6 +45,8 @@ export default function CategoriesPage() {
     setEditing(null);
     setName('');
     setColor(COLORS[0] as string);
+    setSizes('');
+    setTraitLabel('');
     setCreating(true);
   }
 
@@ -48,6 +54,8 @@ export default function CategoriesPage() {
     setEditing(category);
     setName(category.name);
     setColor(category.color);
+    setSizes(category.variantSizes.join(', '));
+    setTraitLabel(category.variantTraitLabel ?? '');
     setCreating(true);
   }
 
@@ -56,7 +64,13 @@ export default function CategoriesPage() {
     if (!trimmed) return;
     setBusy(true);
     try {
-      const draft = { name: trimmed, color, sortOrder: editing?.sortOrder ?? categories.length * 10 };
+      const draft = {
+        name: trimmed,
+        color,
+        sortOrder: editing?.sortOrder ?? categories.length * 10,
+        variantSizes: sizes.split(',').map((size) => size.trim()).filter(Boolean),
+        variantTraitLabel: traitLabel.trim() || null,
+      };
       if (editing) {
         await container().categories.update(editing.id, draft);
       } else {
@@ -143,6 +157,41 @@ export default function CategoriesPage() {
           autoFocus
           className="field mt-2"
         />
+
+        <label className="eyebrow mt-5 block" htmlFor="cat-sizes">
+          Sizes (optional)
+        </label>
+        <input
+          id="cat-sizes"
+          value={sizes}
+          onChange={(event) => setSizes(event.target.value)}
+          placeholder="50g, 250g, 1kg"
+          className="field mt-2"
+        />
+        <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-faint)]">
+          {sizes.trim()
+            ? 'Articles on this shelf are named from a brand, a size and the field below, so ' +
+              'the same thing cannot be entered twice under two spellings.'
+            : 'Leave this empty unless the shelf sells one thing in several sizes, like tobacco.'}
+        </p>
+
+        {sizes.trim() !== '' && (
+          <>
+            <label className="eyebrow mt-4 block" htmlFor="cat-trait">
+              And what varies
+            </label>
+            <input
+              id="cat-trait"
+              value={traitLabel}
+              onChange={(event) => setTraitLabel(event.target.value)}
+              placeholder="Taste"
+              className="field mt-2"
+            />
+            <p className="mt-1.5 text-xs text-[var(--color-faint)]">
+              The word this shelf uses, such as Taste, Flavour or Colour.
+            </p>
+          </>
+        )}
 
         <p className="eyebrow mt-5">Colour</p>
         <div className="mt-2 flex flex-wrap gap-3">
