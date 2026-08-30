@@ -668,18 +668,18 @@ check('tobacco is set up with the sizes the shop sells',
 eq('and calls its free-text part a taste', tobacco.variant_trait_label, 'Taste');
 
 const shisha = await one(
-  `select create_product('BC-AF250', 'Al Fakher 250g Double Apple', $1, 500, 900, 4, 1,
-                         'piece', null, 'budget', '250g', 'Double Apple') as id`,
+  `select create_product('BC-AF250', 'Al Fakher Double Apple 250g', $1, 500, 900, 4, 1,
+                         'piece', null, 'budget', '250g', 'Double Apple', 'Al Fakher') as id`,
   [tobacco.id],
 );
 const shishaRow = await one('select * from products where id = $1', [shisha.id]);
 eq('the assembled name is what the catalogue carries',
-  shishaRow.name, 'Al Fakher 250g Double Apple');
+  shishaRow.name, 'Al Fakher Double Apple 250g');
 eq('the size is kept apart so the form can edit it', shishaRow.variant_size, '250g');
 eq('and so is the taste', shishaRow.variant_trait, 'Double Apple');
 
 const sameBrand = await one(
-  `select create_product('BC-AF50', 'Al Fakher 50g Mint', $1, 200, 400, 6, 1,
+  `select create_product('BC-AF50', 'Al Fakher Mint 50g', $1, 200, 400, 6, 1,
                          'piece', null, 'budget', '50g', 'Mint') as id`,
   [tobacco.id],
 );
@@ -687,6 +687,36 @@ eq('a different size is a different article with its own stock',
   (await one('select quantity_in_stock q from products where id = $1', [sameBrand.id])).q, '6.000');
 eq('the two do not collide', (await one(
   `select count(*) c from products where name like 'Al Fakher%' and is_active`)).c, 2);
+
+/*
+  The brand is a column, not the leading words of the name. That is what lets the till group a
+  family together after a name has been edited by hand, which the old chop-the-suffix approach
+  quietly failed at.
+*/
+eq('the brand is stored in its own right', shishaRow.variant_base, 'Al Fakher');
+
+const renamed = await one(
+  `select create_product('BC-AF1K', 'Al Fakher Mint 1kg', $1, 900, 1500, 2, 1,
+                         'piece', null, 'budget', '1kg', 'Mint', 'Al Fakher') as id`,
+  [tobacco.id],
+);
+await db.query(`update products set name = 'Hand edited entirely' where id = $1`, [renamed.id]);
+eq('and survives the name being edited afterwards',
+  (await one('select variant_base v from products where id = $1', [renamed.id])).v, 'Al Fakher');
+
+const family = await all(
+  `select variant_trait, variant_size from products
+    where category_id = $1 and variant_base = 'Al Fakher' and is_active
+    order by variant_trait, variant_size`,
+  [tobacco.id],
+);
+eq('so the whole brand still groups together', family.length, 3);
+check('and the till can walk it as tastes then weights',
+  JSON.stringify(family.map((r) => [r.variant_trait, r.variant_size])) ===
+    JSON.stringify([['Double Apple', '250g'], ['Mint', '1kg'], ['Mint', '50g']]),
+  JSON.stringify(family));
+
+eq('tobacco knows what it calls the leading part', tobacco.variant_base_label, 'Brand');
 
 check('a shelf with no sizes is untouched by any of this',
   (await one('select variant_sizes v from categories where id = $1', [cat.id])).v === null);

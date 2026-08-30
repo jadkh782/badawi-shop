@@ -59,14 +59,21 @@ export class SaveProduct {
 
     const size = input.variantSize?.trim() ?? '';
     const trait = input.variantTrait?.trim() ?? '';
+    // On a shelf that names things from parts, the Name box holds the brand. Everywhere else
+    // it holds the whole name and the other two are empty, which assembles back to itself.
+    const base = name;
+    const hasParts = size !== '' || trait !== '';
 
     return {
       barcode: input.barcode.trim() === '' ? null : input.barcode.trim(),
       // Assembled here rather than in the component, so an article created from the till,
       // from a scan or from a test all end up named the same way.
-      name: Product.assembleName(name, size, trait),
+      name: Product.assembleName(base, trait, size),
       variantSize: size === '' ? null : size,
       variantTrait: trait === '' ? null : trait,
+      // Only recorded when it is genuinely one part of three. An ordinary article is its
+      // name, and storing that twice would be two things to keep in step.
+      variantBase: hasParts ? base : null,
       categoryId: input.categoryId,
       costPriceCents: costPrice.cents,
       salePriceCents: salePrice.cents,

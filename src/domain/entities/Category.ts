@@ -20,9 +20,21 @@ export class Category {
     readonly variantSizes: readonly string[] = [],
     /** What this shelf calls its free-text part, such as "Taste". */
     readonly variantTraitLabel: string | null = null,
+    /** What this shelf calls the leading part, such as "Brand". */
+    readonly variantBaseLabel: string | null = null,
   ) {}
 
   static readonly DEFAULT_COLOR = '#64748b';
+
+  /** The word for the leading part, with a sensible fallback for a shelf that never said. */
+  get baseLabel(): string {
+    return this.variantBaseLabel?.trim() || 'Brand';
+  }
+
+  /** The word for the free-text part, likewise. */
+  get traitLabel(): string {
+    return this.variantTraitLabel?.trim() || 'Variety';
+  }
 
   /** Whether articles on this shelf are named from parts rather than typed out whole. */
   get hasVariants(): boolean {

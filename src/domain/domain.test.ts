@@ -38,6 +38,32 @@ function makeProduct(o: ProductOverrides = {}): Product {
   });
 }
 
+/** An article filed under a shelf that names things from parts. */
+function variantProduct(
+  name: string,
+  base: string | null,
+  trait: string | null,
+  size: string | null,
+): Product {
+  return new Product({
+    id: 'v1',
+    barcode: null,
+    name,
+    categoryId: 'c1',
+    categoryName: 'Tobacco',
+    costPrice: Money.fromDollars(5),
+    salePrice: Money.fromDollars(9),
+    stock: Quantity.of(4),
+    lowStockThreshold: Quantity.of(1),
+    unit: 'piece',
+    notes: null,
+    isActive: true,
+    variantBase: base,
+    variantTrait: trait,
+    variantSize: size,
+  });
+}
+
 function makeBatch(id: string, costDollars: number, remaining = 50): StockBatch {
   return new StockBatch(
     id,
@@ -336,44 +362,41 @@ describe('DateRange', () => {
   twice grows a second copy of its own size.
 */
 describe('variant names', () => {
-  it('assembles a name from its parts', () => {
-    expect(Product.assembleName('Al Fakher', '250g', 'Double Apple')).toBe(
-      'Al Fakher 250g Double Apple',
+  it('assembles a name as brand, then taste, then weight', () => {
+    expect(Product.assembleName('Al Fakher', 'Double Apple', '250g')).toBe(
+      'Al Fakher Double Apple 250g',
     );
   });
 
-  it('leaves a name alone when the shelf has no sizes', () => {
+  it('leaves a name alone when the shelf has no parts', () => {
     expect(Product.assembleName('Cola 1L', null, null)).toBe('Cola 1L');
   });
 
   it('skips a part that was not filled in', () => {
-    expect(Product.assembleName('Al Fakher', '50g', '')).toBe('Al Fakher 50g');
-    expect(Product.assembleName('Al Fakher', '', 'Mint')).toBe('Al Fakher Mint');
+    expect(Product.assembleName('Al Fakher', '', '50g')).toBe('Al Fakher 50g');
+    expect(Product.assembleName('Al Fakher', 'Mint', '')).toBe('Al Fakher Mint');
   });
 
   it('trims what it is given rather than trusting it', () => {
-    expect(Product.assembleName('  Al Fakher ', ' 250g ', ' Mint ')).toBe('Al Fakher 250g Mint');
+    expect(Product.assembleName('  Al Fakher ', ' Mint ', ' 250g ')).toBe('Al Fakher Mint 250g');
   });
 
-  it('strips the parts back off to recover the brand', () => {
-    expect(Product.stripVariant('Al Fakher 250g Double Apple', '250g', 'Double Apple')).toBe(
-      'Al Fakher',
-    );
+  it('reads the brand off the stored part rather than off the name', () => {
+    const filed = variantProduct('Al Fakher Double Apple 250g', 'Al Fakher', 'Double Apple', '250g');
+    expect(filed.brandName).toBe('Al Fakher');
+    expect(filed.hasVariantParts).toBe(true);
   });
 
-  it('is an exact inverse, so editing twice does not double the size', () => {
-    const stored = Product.assembleName('Al Fakher', '250g', 'Mint');
-    const brand = Product.stripVariant(stored, '250g', 'Mint');
-    expect(Product.assembleName(brand, '250g', 'Mint')).toBe(stored);
+  it('groups by the brand even after the name has been edited by hand', () => {
+    // The old approach chopped the parts off the name, so a hand-edited name stopped matching
+    // its own family. The stored brand is unaffected by what the name was changed to.
+    const edited = variantProduct('Something Else Entirely', 'Al Fakher', 'Mint', '50g');
+    expect(edited.brandName).toBe('Al Fakher');
   });
 
-  it('leaves a hand-edited name whole rather than mangling it', () => {
-    expect(Product.stripVariant('Something Else Entirely', '250g', 'Mint')).toBe(
-      'Something Else Entirely',
-    );
-  });
-
-  it('does not strip a brand that merely ends in similar words', () => {
-    expect(Product.stripVariant('Mint', '', 'Mint')).toBe('Mint');
+  it('falls back to the whole name for an article that has no parts', () => {
+    const plain = variantProduct('Cola 1L', null, null, null);
+    expect(plain.brandName).toBe('Cola 1L');
+    expect(plain.hasVariantParts).toBe(false);
   });
 });

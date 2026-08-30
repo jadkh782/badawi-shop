@@ -22,6 +22,7 @@ export interface ProductRow {
   last_cost_price_cents: number | null;
   variant_size: string | null;
   variant_trait: string | null;
+  variant_base: string | null;
   categories?: { name: string } | null;
 }
 
@@ -34,6 +35,7 @@ export interface CategoryRow {
   /** Null on shelves that do not come in sizes, which is most of them. */
   variant_sizes: string[] | null;
   variant_trait_label: string | null;
+  variant_base_label: string | null;
 }
 
 export interface SaleRow {

@@ -69,6 +69,10 @@ export function ProductForm({
 }) {
   const { rate } = useSettings();
   const [categories, setCategories] = useState<Category[]>([]);
+  // What is already on this shelf, so a taste is picked from the list rather than retyped
+  // slightly differently. Getting "Double Apple" and "double apple" into the catalogue as
+  // two things is the whole problem this shelf is trying to avoid.
+  const [siblings, setSiblings] = useState<Product[]>([]);
   const [scanning, setScanning] = useState(false);
   const [budget, setBudget] = useState<BudgetSummary | null>(null);
 
@@ -93,13 +97,48 @@ export function ProductForm({
       ? !budget.canAfford(openingCost)
       : false;
 
+  useEffect(() => {
+    const shelfId = value.categoryId;
+    if (!shelfId) {
+      setSiblings([]);
+      return;
+    }
+    let cancelled = false;
+    void container()
+      .products.list({ categoryId: shelfId, limit: 300 })
+      .then((rows) => {
+        if (!cancelled) setSiblings(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSiblings([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [value.categoryId]);
+
   const set = (patch: Partial<ProductFormInput>) => onChange({ ...value, ...patch });
 
   const shelf = categories.find((category) => category.id === value.categoryId) ?? null;
   // Only shelves that say they come in sizes get the extra fields. Everywhere else the form
   // is exactly what it always was.
   const variantShelf = shelf?.hasVariants ? shelf : null;
-  const assembled = Product.assembleName(value.name, value.variantSize, value.variantTrait);
+  const assembled = Product.assembleName(value.name, value.variantTrait, value.variantSize);
+
+  // Brands already on the shelf, and the tastes already recorded for the brand being typed.
+  const knownBrands = Array.from(
+    new Set(siblings.map((p) => p.brandName).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
+
+  const brandNow = value.name.trim().toLowerCase();
+  const knownTastes = Array.from(
+    new Set(
+      siblings
+        .filter((p) => p.brandName.trim().toLowerCase() === brandNow)
+        .map((p) => p.variantTrait)
+        .filter((t): t is string => Boolean(t)),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
 
   const margin = useMemo(() => {
     try {
@@ -145,16 +184,24 @@ export function ProductForm({
 
       <div>
         <label className="eyebrow" htmlFor="name">
-          {variantShelf ? 'Brand' : 'Name'}
+          {variantShelf ? `Step 1 · ${variantShelf.baseLabel}` : 'Name'}
         </label>
         <input
           id="name"
           value={value.name}
           onChange={(event) => set({ name: event.target.value })}
           placeholder={variantShelf ? 'Al Fakher' : 'What is on the label'}
+          list={variantShelf ? 'known-brands' : undefined}
           className="field mt-2"
           required
         />
+        {variantShelf && knownBrands.length > 0 && (
+          <datalist id="known-brands">
+            {knownBrands.map((brand) => (
+              <option key={brand} value={brand} />
+            ))}
+          </datalist>
+        )}
       </div>
 
       <div>
@@ -188,7 +235,48 @@ export function ProductForm({
 
       {variantShelf && (
         <div>
-          <p className="eyebrow">Size</p>
+          {/*
+            Asked in the order the shop asks for it over the counter: brand, then taste, then
+            weight. The till walks the same three steps in the same order, so entering an
+            article and finding it later are the same journey.
+          */}
+          <p className="eyebrow">
+            Step 2 &middot; {variantShelf.traitLabel}
+          </p>
+          <input
+            id="trait"
+            value={value.variantTrait}
+            onChange={(event) => set({ variantTrait: event.target.value })}
+            placeholder="Double Apple"
+            list="known-tastes"
+            className="field mt-2"
+          />
+          {/* Existing tastes for this brand, offered rather than imposed: a new taste is
+              still just typed, but an existing one is picked and spelled the same way. */}
+          <datalist id="known-tastes">
+            {knownTastes.map((taste) => (
+              <option key={taste} value={taste} />
+            ))}
+          </datalist>
+          {knownTastes.length > 0 && (
+            <div className="strip -mx-4 mt-2 px-4 pb-1">
+              {knownTastes.map((taste) => (
+                <button
+                  key={taste}
+                  type="button"
+                  className="chip"
+                  data-active={value.variantTrait.trim() === taste}
+                  onClick={() =>
+                    set({ variantTrait: value.variantTrait.trim() === taste ? '' : taste })
+                  }
+                >
+                  {taste}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <p className="eyebrow mt-4">Step 3 &middot; Weight</p>
           <div className="strip -mx-4 mt-2 px-4 pb-1">
             {variantShelf.variantSizes.map((size) => (
               <button
@@ -202,17 +290,6 @@ export function ProductForm({
               </button>
             ))}
           </div>
-
-          <label className="eyebrow mt-4 block" htmlFor="trait">
-            {variantShelf.variantTraitLabel ?? 'Variety'}
-          </label>
-          <input
-            id="trait"
-            value={value.variantTrait}
-            onChange={(event) => set({ variantTrait: event.target.value })}
-            placeholder="Double Apple"
-            className="field mt-2"
-          />
 
           {/* Shown because the article is filed under the assembled name, and a name that
               appears only after saving is a name nobody checked. */}

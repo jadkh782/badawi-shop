@@ -47,6 +47,7 @@ export interface ProductDraft {
    */
   variantSize?: string | null;
   variantTrait?: string | null;
+  variantBase?: string | null;
   /**
    * Who paid for the opening stock. Only meaningful on create: the first stock of an article
    * is a purchase, and the books have to say whose money bought it.

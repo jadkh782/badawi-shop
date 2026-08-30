@@ -99,6 +99,9 @@ export class DemoProductRepository implements IProductRepository {
         unit: draft.unit,
         notes: draft.notes,
         isActive: true,
+        variantSize: draft.variantSize ?? null,
+        variantTrait: draft.variantTrait ?? null,
+        variantBase: draft.variantBase ?? null,
       }),
     );
   }

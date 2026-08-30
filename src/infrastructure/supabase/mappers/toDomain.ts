@@ -67,6 +67,7 @@ export function toProduct(row: ProductRow): Product {
     isActive: row.is_active,
     variantSize: row.variant_size ?? null,
     variantTrait: row.variant_trait ?? null,
+    variantBase: row.variant_base ?? null,
   });
 }
 
@@ -79,6 +80,7 @@ export function toCategory(row: CategoryRow): Category {
     row.is_active,
     row.variant_sizes ?? [],
     row.variant_trait_label ?? null,
+    row.variant_base_label ?? null,
   );
 }
 

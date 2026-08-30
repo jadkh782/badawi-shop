@@ -23,6 +23,7 @@ export interface ProductProps {
   /** The parts the name was assembled from, on shelves that come in sizes. */
   variantSize?: string | null;
   variantTrait?: string | null;
+  variantBase?: string | null;
 }
 
 /**
@@ -47,6 +48,7 @@ export class Product {
   readonly isActive: boolean;
   readonly variantSize: string | null;
   readonly variantTrait: string | null;
+  readonly variantBase: string | null;
 
   constructor(props: ProductProps) {
     this.id = props.id;
@@ -64,35 +66,34 @@ export class Product {
     this.isActive = props.isActive;
     this.variantSize = props.variantSize ?? null;
     this.variantTrait = props.variantTrait ?? null;
+    this.variantBase = props.variantBase ?? null;
   }
 
   /**
-   * The name with its parts spelled out.
+   * The filed name, assembled from the parts in the order the shop asks for them.
    *
-   * The stored name is already assembled, so this normally just returns it. It reassembles
-   * only when the parts are present and the name has not caught up with them, which is what
-   * makes an article edited through the form read correctly before it is saved.
+   * Brand, then taste, then weight: "Al Fakher Double Apple 250g". Everything that reads one
+   * name — the till roll, the reports, the search box — reads this, so the three parts only
+   * have to be kept straight in the one place that builds it.
    */
-  static assembleName(name: string, size?: string | null, trait?: string | null): string {
-    return [name.trim(), size?.trim(), trait?.trim()].filter(Boolean).join(' ');
+  static assembleName(base: string, trait?: string | null, size?: string | null): string {
+    return [base.trim(), trait?.trim(), size?.trim()].filter(Boolean).join(' ');
   }
 
   /**
-   * The brand on its own, with the assembled parts taken back off.
+   * The brand on its own, which is what the form edits and what the till groups by.
    *
-   * Exact rather than clever: the parts were appended verbatim when the name was built, so
-   * they come off verbatim. A name that has since been edited by hand will not match, and
-   * then the whole thing is returned unchanged rather than being guessed at and mangled.
+   * Stored rather than chopped off the front of the name. Recovering it by removing the other
+   * parts worked until a name was edited by hand, and then the article silently stopped
+   * grouping with the rest of its brand.
    */
-  static stripVariant(name: string, size?: string | null, trait?: string | null): string {
-    const suffix = [size?.trim(), trait?.trim()].filter(Boolean).join(' ');
-    if (!suffix) return name;
-    return name.endsWith(` ${suffix}`) ? name.slice(0, -(suffix.length + 1)) : name;
-  }
-
-  /** The brand without its size and taste, which is what the form edits. */
   get brandName(): string {
-    return Product.stripVariant(this.name, this.variantSize, this.variantTrait);
+    return this.variantBase ?? this.name;
+  }
+
+  /** True when this article is one of a family rather than a thing on its own. */
+  get hasVariantParts(): boolean {
+    return this.variantBase !== null && (this.variantTrait !== null || this.variantSize !== null);
   }
 
   /** Profit on a single unit at the current prices. */

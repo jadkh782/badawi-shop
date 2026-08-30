@@ -169,6 +169,7 @@ export class InMemoryStore {
       isActive: patch.isActive ?? product.isActive,
       variantSize: product.variantSize,
       variantTrait: product.variantTrait,
+      variantBase: product.variantBase,
     });
   }
 
@@ -459,6 +460,7 @@ export class InMemoryStore {
       isActive: true,
       variantSize: draft.variantSize ?? null,
       variantTrait: draft.variantTrait ?? null,
+      variantBase: draft.variantBase ?? null,
     });
     this.products.push(product);
 

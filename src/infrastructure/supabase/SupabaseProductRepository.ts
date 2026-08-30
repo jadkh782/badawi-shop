@@ -93,6 +93,7 @@ export class SupabaseProductRepository implements IProductRepository {
       p_funding: draft.funding ?? 'budget',
       p_variant_size: draft.variantSize ?? null,
       p_variant_trait: draft.variantTrait ?? null,
+      p_variant_base: draft.variantBase ?? null,
     });
     if (error) throw asDuplicate(error, draft.barcode);
 
@@ -172,6 +173,7 @@ function toRow(draft: ProductDraft): Record<string, unknown> {
     notes: draft.notes,
     variant_size: draft.variantSize ?? null,
     variant_trait: draft.variantTrait ?? null,
+    variant_base: draft.variantBase ?? null,
   };
 }
 
