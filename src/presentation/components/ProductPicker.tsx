@@ -30,7 +30,7 @@ export function ProductPicker({
 }: {
   open: boolean;
   onClose: () => void;
-  onPick: (product: Product) => void;
+  onPick: (product: Product, quantity: number) => void;
 }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -41,6 +41,10 @@ export function ProductPicker({
   // How far into the shelf the cashier has walked. Both null is the brand list.
   const [brand, setBrand] = useState<string | null>(null);
   const [taste, setTaste] = useState<string | null>(null);
+  // The article waiting on a count. Chosen here rather than added as one and stepped up in
+  // the cart, because "six of those" is one thing the cashier knows and six taps is six
+  // chances to lose count while a queue watches.
+  const [pending, setPending] = useState<Product | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -51,7 +55,12 @@ export function ProductPicker({
   useEffect(() => {
     setBrand(null);
     setTaste(null);
+    setPending(null);
   }, [categoryId, search]);
+
+  useEffect(() => {
+    if (!open) setPending(null);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,6 +108,21 @@ export function ProductPicker({
     if (!shelf) return 'All items';
     return shelf.name;
   }, [searching, search, shelf]);
+
+  if (pending) {
+    return (
+      <Sheet open={open} onClose={() => setPending(null)} title={pending.name}>
+        <HowMany
+          product={pending}
+          onCancel={() => setPending(null)}
+          onConfirm={(quantity) => {
+            setPending(null);
+            onPick(pending, quantity);
+          }}
+        />
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet open={open} onClose={onClose} title="Add without scanning">
@@ -196,7 +220,7 @@ export function ProductPicker({
           {/* Anything on this shelf without parts, offered alongside the brands. */}
           {!brand &&
             loose.map((product) => (
-              <ProductTile key={product.id} product={product} onPick={onPick} />
+              <ProductTile key={product.id} product={product} onPick={setPending} />
             ))}
 
           {/* Tastes for the chosen brand */}
@@ -218,7 +242,7 @@ export function ProductPicker({
               <ProductTile
                 key={product.id}
                 product={product}
-                onPick={onPick}
+                onPick={setPending}
                 label={product.variantSize ?? product.name}
               />
             ))}
@@ -236,11 +260,152 @@ export function ProductPicker({
       ) : (
         <div className="grid grid-cols-2 gap-2 pb-4 sm:grid-cols-3">
           {products.map((product) => (
-            <ProductTile key={product.id} product={product} onPick={onPick} />
+            <ProductTile key={product.id} product={product} onPick={setPending} />
           ))}
         </div>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * How many of this one.
+ *
+ * Opens on one, because one is the common answer and the cashier should be able to confirm
+ * without thinking. The quick counts are there for the uncommon one: "six of those" is a
+ * single fact the cashier already knows, and six taps on a plus button is six chances to
+ * lose count while somebody waits.
+ *
+ * Stock is the ceiling. Nothing here lets the basket ask for more than the shelf holds,
+ * because the sale would be refused at checkout and the cashier would find out last.
+ */
+function HowMany({
+  product,
+  onConfirm,
+  onCancel,
+}: {
+  product: Product;
+  onConfirm: (quantity: number) => void;
+  onCancel: () => void;
+}) {
+  const ceiling = Math.max(1, Math.floor(product.stock.value));
+  const [quantity, setQuantity] = useState(1);
+  const clamp = (n: number) => Math.max(1, Math.min(ceiling, n));
+  const total = product.salePrice.multiply(quantity);
+
+  const quick = [1, 2, 3, 5, 10, 20].filter((n) => n <= ceiling);
+
+  return (
+    <>
+      <div className="card mb-4 flex items-center justify-between p-4">
+        <div className="min-w-0">
+          <p className="eyebrow">Each</p>
+          <p className="tnum mt-1 text-sm font-semibold">{product.salePrice.format()}</p>
+        </div>
+        <div className="text-right">
+          <p className="eyebrow">On the shelf</p>
+          <p className="tnum mt-1 text-sm font-semibold">
+            {product.stock.format()}
+            <span className="ml-1 text-xs font-medium text-[var(--color-faint)]">
+              {product.unit}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      <p className="eyebrow">How many</p>
+      <div className="mt-2 flex items-center justify-center gap-4">
+        <RoundButton label="One fewer" onClick={() => setQuantity(clamp(quantity - 1))} disabled={quantity <= 1}>
+          &minus;
+        </RoundButton>
+        <input
+          value={quantity}
+          onChange={(event) => {
+            const typed = Number(event.target.value.replace(/[^0-9]/g, ''));
+            setQuantity(Number.isFinite(typed) && typed > 0 ? clamp(typed) : 1);
+          }}
+          inputMode="numeric"
+          aria-label="How many"
+          className="field tnum w-24 text-center text-3xl font-bold"
+        />
+        <RoundButton
+          label="One more"
+          onClick={() => setQuantity(clamp(quantity + 1))}
+          disabled={quantity >= ceiling}
+        >
+          +
+        </RoundButton>
+      </div>
+
+      {quick.length > 1 && (
+        <div className="strip -mx-4 mt-4 px-4 pb-1">
+          {quick.map((n) => (
+            <button
+              key={n}
+              type="button"
+              className="chip"
+              data-active={quantity === n}
+              onClick={() => setQuantity(n)}
+            >
+              {n}
+            </button>
+          ))}
+          {ceiling > 1 && (
+            <button
+              type="button"
+              className="chip"
+              data-active={quantity === ceiling}
+              onClick={() => setQuantity(ceiling)}
+            >
+              All {ceiling}
+            </button>
+          )}
+        </div>
+      )}
+
+      {quantity >= ceiling && product.stock.value >= 1 && (
+        <p className="mt-3 text-center text-xs text-[var(--color-faint)]">
+          That is everything on the shelf.
+        </p>
+      )}
+
+      <div className="mt-5 flex gap-2">
+        <button type="button" className="btn btn-ghost flex-1" onClick={onCancel}>
+          Back
+        </button>
+        <button
+          type="button"
+          className="btn btn-sell flex-[2]"
+          onClick={() => onConfirm(quantity)}
+        >
+          Add {quantity} &middot; {total.format()}
+        </button>
+      </div>
+    </>
+  );
+}
+
+function RoundButton({
+  label,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      disabled={disabled}
+      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-[var(--color-line)] text-2xl font-bold text-[var(--color-muted)] disabled:opacity-30"
+    >
+      {children}
+    </button>
   );
 }
 

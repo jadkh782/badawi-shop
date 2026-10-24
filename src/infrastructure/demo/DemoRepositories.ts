@@ -23,6 +23,8 @@ import type {
   CheckoutRequest,
   IAuthService,
   IBudgetRepository,
+  PayOutKind,
+  PayOutResult,
   ICategoryRepository,
   IProductRepository,
   ISaleRepository,
@@ -256,8 +258,17 @@ export class DemoBudgetRepository implements IBudgetRepository {
       out('refund'),
       out('void'),
       of('removal'),
+      out('expense'),
+      out('drawing'),
       cash.length,
     );
+  }
+
+  async payOut(kind: PayOutKind, amountCents: number, note?: string | null): Promise<PayOutResult> {
+    // The same rule as the database: the caller says how much, never which way.
+    store().recordCash(kind, Money.fromCents(-amountCents), null, note ?? null);
+    const balance = Money.sum(store().cash.map((m) => m.amount));
+    return { amountCents, balanceCents: balance.cents };
   }
 
   async inventoryValue(): Promise<InventoryValue> {

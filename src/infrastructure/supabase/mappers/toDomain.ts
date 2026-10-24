@@ -167,6 +167,8 @@ export function toBudget(row: BudgetRow | undefined): BudgetSummary {
     Money.fromCents(num(row.refunded_cents)),
     Money.fromCents(num(row.voided_cents)),
     Money.fromCents(num(row.removed_cents)),
+    Money.fromCents(num(row.expenses_cents)),
+    Money.fromCents(num(row.drawings_cents)),
     num(row.entry_count),
   );
 }

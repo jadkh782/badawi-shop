@@ -1,6 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CashMovement, InventoryValue, Money, type BudgetSummary, type CashKind } from '@/domain';
-import type { IBudgetRepository, IShopReset, ResetCounts } from '@/application/ports';
+import type {
+  IBudgetRepository,
+  IShopReset,
+  PayOutKind,
+  PayOutResult,
+  ResetCounts,
+} from '@/application/ports';
 import { toBudget, toInventoryValue } from './mappers/toDomain';
 import type { BudgetRow, InventoryValueRow } from './types';
 import { translateError } from './errors';
@@ -22,6 +28,21 @@ export class SupabaseBudgetRepository implements IBudgetRepository {
     const { data, error } = await this.db.rpc('report_budget');
     if (error) throw translateError(error);
     return toBudget((data as BudgetRow[])[0]);
+  }
+
+  async payOut(kind: PayOutKind, amountCents: number, note?: string | null): Promise<PayOutResult> {
+    const { data, error } = await this.db.rpc('pay_out', {
+      p_kind: kind,
+      p_amount_cents: amountCents,
+      p_note: note ?? null,
+    });
+    if (error) throw translateError(error);
+
+    const row = (data ?? {}) as Record<string, unknown>;
+    return {
+      amountCents: Number(row.amount_cents ?? amountCents),
+      balanceCents: Number(row.balance_cents ?? 0),
+    };
   }
 
   async inventoryValue(): Promise<InventoryValue> {

@@ -9,7 +9,7 @@ export type {
   StockChangeResult,
   RestockFunding,
 } from './IProductRepository';
-export type { IBudgetRepository } from './IBudgetRepository';
+export type { IBudgetRepository, PayOutKind, PayOutResult } from './IBudgetRepository';
 export type { IShopReset, ResetCounts } from './IShopReset';
 export type { ICategoryRepository, CategoryDraft } from './ICategoryRepository';
 export type {

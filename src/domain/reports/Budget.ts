@@ -8,7 +8,9 @@ export type CashKind =
   | 'correction'
   | 'void'
   | 'refund'
-  | 'removal';
+  | 'removal'
+  | 'expense'
+  | 'drawing';
 
 /**
  * What is in the cash box and how it got there.
@@ -34,12 +36,18 @@ export class BudgetSummary {
     readonly voided: Money,
     /** Given back by articles removed from the inventory while they still held stock. */
     readonly removed: Money,
+    /** Rent, electricity and anything else the shop pays to keep its doors open. */
+    readonly expenses: Money,
+    /** Money the owner has taken out for themselves. */
+    readonly drawings: Money,
     readonly entryCount: number,
   ) {}
 
   static empty(): BudgetSummary {
     const zero = Money.zero();
-    return new BudgetSummary(zero, zero, zero, zero, zero, zero, zero, zero, zero, 0);
+    return new BudgetSummary(
+      zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, zero, 0,
+    );
   }
 
   /** True when more has gone out than has come in, which the screen shows in red. */
@@ -59,7 +67,12 @@ export class BudgetSummary {
    * and they are not the same thing at all.
    */
   get earned(): Money {
-    return this.balance.subtract(this.investedFromOutside);
+    // Money put in from outside was never earned, so it comes off. Money the owner has taken
+    // out goes back on: the shop earned it and then handed it over, and leaving it out would
+    // make a shop that pays its owner well look like one that is barely breaking even.
+    //
+    // Expenses are deliberately not added back. Rent is a cost of earning anything at all.
+    return this.balance.subtract(this.investedFromOutside).add(this.drawings);
   }
 
   /** Whether a delivery of this cost can be paid for out of the shop's own money. */
@@ -129,6 +142,10 @@ export class CashMovement {
           : 'Stock correction';
       case 'opening':
         return this.productName ? `First stock, ${this.productName}` : 'First stock';
+      case 'expense':
+        return this.note ? `Expense, ${this.note}` : 'Expense';
+      case 'drawing':
+        return this.note ? `Paid to owner, ${this.note}` : 'Paid to owner';
       case 'removal':
         return this.productName
           ? `Removed from inventory, ${this.productName}`

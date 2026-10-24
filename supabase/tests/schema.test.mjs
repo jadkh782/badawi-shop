@@ -728,6 +728,50 @@ const plain = await one(
 eq('and an article on it carries no size', (await one(
   'select variant_size v from products where id = $1', [plain.id])).v, null);
 
+// --- costs and wages --------------------------------------------------------
+console.log('\ncosts and wages');
+
+const boxP0 = await budget();
+await db.query(`select pay_out('expense', 25000, 'Rent')`);
+const boxP1 = await budget();
+
+eq('a running cost comes out of the balance',
+  Number(boxP0.balance_cents) - Number(boxP1.balance_cents), 25000);
+eq('and is reported as its own figure',
+  Number(boxP1.expenses_cents) - Number(boxP0.expenses_cents), 25000);
+eq('it is stored negative however it was typed',
+  (await one(`select amount_cents a from cash_movements where kind = 'expense'
+              order by created_at desc limit 1`)).a, -25000);
+
+await db.query(`select pay_out('drawing', 100000, null)`);
+const boxP2 = await budget();
+eq('paying yourself also comes out of the balance',
+  Number(boxP1.balance_cents) - Number(boxP2.balance_cents), 100000);
+eq('and is kept apart from the running costs',
+  Number(boxP2.drawings_cents) - Number(boxP1.drawings_cents), 100000);
+eq('so the running cost figure is untouched by it',
+  boxP2.expenses_cents, boxP1.expenses_cents);
+
+/*
+  The balance still has to be the sum of its own rows. Two new kinds is two new chances for a
+  figure to be reported one way and stored another.
+*/
+const sumAfter = Number((await one('select sum(amount_cents) s from cash_movements')).s);
+eq('the ledger still accounts for the balance exactly', sumAfter, Number(boxP2.balance_cents));
+
+await expectError('a payment of nothing is refused', '22023', () =>
+  db.query(`select pay_out('expense', 0, null)`));
+await expectError('a negative payment is refused, not flipped', '22023', () =>
+  db.query(`select pay_out('expense', -500, null)`));
+await expectError('an unknown kind is refused', '22023', () =>
+  db.query(`select pay_out('bonus', 500, null)`));
+eq('and none of the refused attempts moved the balance',
+  (await budget()).balance_cents, boxP2.balance_cents);
+
+// Rent falls due whether or not the week was good, so it records and warns rather than refusing.
+await db.query(`select pay_out('drawing', 99999999, 'everything')`);
+check('the shop is allowed to go overdrawn', Number((await budget()).balance_cents) < 0);
+
 // --- reset -----------------------------------------------------------------
 console.log('\nreset');
 

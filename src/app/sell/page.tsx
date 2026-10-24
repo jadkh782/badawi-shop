@@ -47,6 +47,8 @@ export default function SellPage() {
   const [choosingBatch, setChoosingBatch] = useState<{
     product: Product;
     batches: StockBatch[];
+    /** How many were asked for before the question interrupted. */
+    quantity?: number;
   } | null>(null);
 
   // Guards against the same code being handled twice while its lookup is still in flight.
@@ -60,23 +62,25 @@ export default function SellPage() {
    * mode and most times even in batch mode.
    */
   const addProduct = useCallback(
-    async (product: Product) => {
+    async (product: Product, quantity = 1) => {
       if (!settings.tracksPricesSeparately) {
-        add(product);
+        add(product, quantity);
         return true;
       }
 
       try {
         const batches = await container().products.batches(product.id);
         if (batches.length > 1) {
-          setChoosingBatch({ product, batches });
+          // The count is carried across the question, so answering which price it came off
+          // does not quietly drop the six the cashier already asked for.
+          setChoosingBatch({ product, batches, quantity });
           return false;
         }
-        add(product, 1, batches[0] ?? null);
+        add(product, quantity, batches[0] ?? null);
       } catch {
         // The batches are a refinement on the cost, not a precondition for selling. If they
         // cannot be read, the sale still goes through and the database costs it oldest first.
-        add(product);
+        add(product, quantity);
       }
       return true;
     },
@@ -307,9 +311,9 @@ export default function SellPage() {
       <ProductPicker
         open={browsing}
         onClose={() => setBrowsing(false)}
-        onPick={(product) => {
+        onPick={(product, quantity) => {
           setBrowsing(false);
-          void addProduct(product).then((added) => {
+          void addProduct(product, quantity).then((added) => {
             setLastAdded(product);
             if (added) beepFound();
           });
@@ -323,7 +327,7 @@ export default function SellPage() {
           batches={choosingBatch.batches}
           onClose={() => setChoosingBatch(null)}
           onPick={(batch) => {
-            add(choosingBatch.product, 1, batch);
+            add(choosingBatch.product, choosingBatch.quantity ?? 1, batch);
             beepFound();
             setChoosingBatch(null);
           }}

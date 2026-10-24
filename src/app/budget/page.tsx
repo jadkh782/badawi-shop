@@ -5,6 +5,8 @@ import type { BudgetView } from '@/application/use-cases';
 import { container } from '@/container';
 import { messageFor } from '@/infrastructure/supabase/errors';
 import { AppShell } from '@/presentation/components/AppShell';
+import { PayOutSheet } from '@/presentation/components/PayOutSheet';
+import type { PayOutKind } from '@/application/ports';
 import { useSettings } from '@/presentation/providers/SettingsProvider';
 
 /**
@@ -23,6 +25,7 @@ export default function BudgetPage() {
   const { rate } = useSettings();
   const [view, setView] = useState<BudgetView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paying, setPaying] = useState<PayOutKind | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -110,6 +113,23 @@ export default function BudgetPage() {
           )}
         </section>
 
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="btn btn-ghost w-full"
+            onClick={() => setPaying('expense')}
+          >
+            Pay a cost
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost w-full"
+            onClick={() => setPaying('drawing')}
+          >
+            Pay myself
+          </button>
+        </div>
+
         <section className="card p-4">
           <p className="eyebrow">Where it came from</p>
           <div className="mt-3 flex flex-col gap-3">
@@ -168,11 +188,27 @@ export default function BudgetPage() {
                 hint="What the stock of a removed article had cost, returned to the budget"
               />
             )}
+            {summary && !summary.expenses.isZero() && (
+              <Figure
+                label="Running costs paid"
+                value={`-${summary.expenses.format()}`}
+                tone="var(--color-danger)"
+                hint="Rent, electricity and anything else it takes to keep the doors open"
+              />
+            )}
+            {summary && !summary.drawings.isZero() && (
+              <Figure
+                label="Paid to you"
+                value={`-${summary.drawings.format()}`}
+                tone="var(--color-muted)"
+                hint="Taken out for yourself, which is not a cost of running the shop"
+              />
+            )}
             <div className="border-t border-[var(--color-line)] pt-3">
               <Figure
                 label="Earned by the shop itself"
                 value={summary?.earned.format()}
-                hint="The balance, setting aside anything paid in from your own pocket"
+                hint="The balance, setting aside money put in from outside and adding back what you have taken out"
               />
             </div>
           </div>
@@ -212,6 +248,18 @@ export default function BudgetPage() {
           </ul>
         </section>
       </div>
+      {paying && (
+        <PayOutSheet
+          open
+          kind={paying}
+          summary={summary ?? null}
+          onClose={() => setPaying(null)}
+          onDone={() => {
+            setPaying(null);
+            void load();
+          }}
+        />
+      )}
     </AppShell>
   );
 }

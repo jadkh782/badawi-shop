@@ -171,6 +171,8 @@ export interface BudgetRow {
   refunded_cents: number;
   voided_cents: number;
   removed_cents: number;
+  expenses_cents: number;
+  drawings_cents: number;
   entry_count: number;
 }
 
