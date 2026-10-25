@@ -1287,26 +1287,24 @@ grant execute on function public.reset_shop(text) to authenticated;
 -- written out per kind rather than as one rule with exceptions.
 -- ---------------------------------------------------------------------------
 
+-- ---------------------------------------------------------------------------
+-- The two constraints that say which kinds exist, and which way each one moves, are
+-- deliberately only dropped here and never re-added.
+--
+-- They used to be re-stated in every migration that widened them, which is correct going
+-- forwards and wrong on a replay. schema.sql is the whole history pasted in order over a
+-- live database, so this migration runs again on a shop that has since recorded a kind
+-- invented later. Re-stating the shorter list then rejects a row that is perfectly valid,
+-- and the paste fails with "violated by some row".
+--
+-- So the set of kinds has exactly one owner: the newest migration that changes it. Up to
+-- that point the table simply carries no such constraint, which lasts microseconds inside
+-- a single paste and cannot be observed by the app.
+-- ---------------------------------------------------------------------------
 alter table public.cash_movements
   drop constraint if exists cash_movements_kind_check;
 alter table public.cash_movements
-  add constraint cash_movements_kind_check check (
-    kind in ('sale', 'restock', 'opening', 'investment', 'correction', 'void', 'refund')
-  );
-
-alter table public.cash_movements
   drop constraint if exists cash_direction;
-alter table public.cash_movements
-  add constraint cash_direction check (
-    (kind = 'sale'       and amount_cents >= 0) or
-    (kind = 'investment' and amount_cents >= 0) or
-    (kind = 'restock'    and amount_cents <= 0) or
-    (kind = 'opening'    and amount_cents <= 0) or
-    (kind = 'void'       and amount_cents <= 0) or
-    (kind = 'refund'     and amount_cents <= 0) or
-    -- Found stock costs money, missing stock gives it back. Both are corrections.
-    (kind = 'correction')
-  );
 
 -- ---------------------------------------------------------------------------
 -- The stock ledger gains the two reasons that put units back on the shelf.
@@ -3335,29 +3333,24 @@ revoke all on all functions in schema public from anon;
 -- but an accidental delete would still lose the record of the thing.
 -- ---------------------------------------------------------------------------
 
+-- ---------------------------------------------------------------------------
+-- The two constraints that say which kinds exist, and which way each one moves, are
+-- deliberately only dropped here and never re-added.
+--
+-- They used to be re-stated in every migration that widened them, which is correct going
+-- forwards and wrong on a replay. schema.sql is the whole history pasted in order over a
+-- live database, so this migration runs again on a shop that has since recorded a kind
+-- invented later. Re-stating the shorter list then rejects a row that is perfectly valid,
+-- and the paste fails with "violated by some row".
+--
+-- So the set of kinds has exactly one owner: the newest migration that changes it. Up to
+-- that point the table simply carries no such constraint, which lasts microseconds inside
+-- a single paste and cannot be observed by the app.
+-- ---------------------------------------------------------------------------
 alter table public.cash_movements
   drop constraint if exists cash_movements_kind_check;
 alter table public.cash_movements
-  add constraint cash_movements_kind_check check (
-    kind in ('sale', 'restock', 'opening', 'investment', 'correction',
-             'void', 'refund', 'removal')
-  );
-
-alter table public.cash_movements
   drop constraint if exists cash_direction;
-alter table public.cash_movements
-  add constraint cash_direction check (
-    (kind = 'sale'       and amount_cents >= 0) or
-    (kind = 'investment' and amount_cents >= 0) or
-    -- Stock leaving the inventory hands its money back, so this only ever comes in.
-    (kind = 'removal'    and amount_cents >= 0) or
-    (kind = 'restock'    and amount_cents <= 0) or
-    (kind = 'opening'    and amount_cents <= 0) or
-    (kind = 'void'       and amount_cents <= 0) or
-    (kind = 'refund'     and amount_cents <= 0) or
-    -- Found stock costs money, missing stock gives it back. Both are corrections.
-    (kind = 'correction')
-  );
 
 -- ---------------------------------------------------------------------------
 -- archive_product: take it off the shelves, and put the money back.

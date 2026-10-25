@@ -47,6 +47,47 @@ for (const pass of [1, 2]) {
   Without this the grant assertions below pass for the wrong reason: a bare Postgres has no
   such default, so an additive-only schema looks correct here and is wrong in production.
 */
+/*
+  Applying over a shop that has already been trading.
+
+  Every pass above ran against an empty database, and that is exactly the blind spot that let
+  a real failure through. schema.sql is the whole history pasted in order over a LIVE
+  database, so an early migration that re-stated a shorter list of cash kinds would reject a
+  row written by a kind invented later, and the shop got:
+
+      check constraint "cash_movements_kind_check" is violated by some row
+
+  So the ledger is filled with one row of every kind the system can write, and then the whole
+  schema is applied again on top of it.
+*/
+const EVERY_KIND = [
+  ['sale', 100], ['restock', -100], ['opening', -100], ['investment', 100],
+  ['correction', -50], ['void', -100], ['refund', -100], ['removal', 100],
+  ['expense', -100], ['drawing', -100],
+];
+
+for (const [kind, amount] of EVERY_KIND) {
+  await db.query('insert into cash_movements (kind, amount_cents) values ($1, $2)', [kind, amount]);
+}
+
+try {
+  await db.exec(schema);
+  console.log('  ok   schema re-applies over a ledger holding every kind of entry');
+} catch (e) {
+  console.error(`  FAIL schema cannot be re-applied over existing data: ${e.message}`);
+  process.exit(1);
+}
+
+const kept = await db.query('select count(*)::int c from cash_movements');
+if (kept.rows[0].c !== EVERY_KIND.length) {
+  console.error(`  FAIL re-applying lost ledger rows: ${kept.rows[0].c} of ${EVERY_KIND.length} left`);
+  process.exit(1);
+}
+console.log('  ok   and leaves every one of those entries where it was');
+
+// Left as it found it, so the counts asserted below are not thrown off.
+await db.query('delete from cash_movements where true');
+
 await db.exec(`grant all on all tables in schema public to authenticated, anon;`);
 await db.exec(schema);
 console.log('  ok   schema narrows a blanket GRANT ALL back down');
