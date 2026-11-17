@@ -109,21 +109,57 @@ function escapeHtml(value) {
 /**
  * Prints a finished document, with no dialog.
  *
- * The document arrives as HTML, already laid out for 80mm paper by the same code that builds
- * it for the browser, so a receipt printed here and one printed on a phone are the same
- * receipt. It is rendered in an offscreen window because printing needs something laid out,
- * and that window is destroyed whether the print worked or not.
+ * The document arrives as HTML, already laid out by the same code that builds it for the
+ * browser, so a receipt printed here and one printed on a phone are the same receipt. It is
+ * rendered in an offscreen window because printing needs something laid out, and that window
+ * is torn down whether the print worked or not.
+ *
+ * Written to a file rather than handed over as a data: URL. The data URL route printed the
+ * HTML source as plain text on the real printer — feet of paper covered in angle brackets —
+ * and a file has no encoding to get wrong, no length limit to exceed and an extension that
+ * settles what it is.
  */
 ipcMain.handle('badawi:print', async (_event, job) => {
-  if (!job || typeof job.html !== 'string') return 'unavailable';
+  if (!job || typeof job.html !== 'string' || job.html.length === 0) return 'unavailable';
+
+  const scratch = path.join(
+    app.getPath('temp'),
+    `badawi-print-${Date.now()}-${Math.random().toString(36).slice(2)}.html`,
+  );
 
   const worker = new BrowserWindow({
     show: false,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, javascript: false },
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
   try {
-    await worker.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(job.html));
+    fs.writeFileSync(scratch, job.html, 'utf8');
+    await worker.loadFile(scratch);
+
+    /*
+      How long the paper needs to be.
+
+      A receipt has no natural page length: it is as long as the sale. Left unsaid, the
+      printer uses whatever its driver has configured, which on a roll printer is enormous,
+      and a four-line receipt comes out on half a metre of paper. So the finished document is
+      measured and the printer told exactly, which is the one number that cannot be worked
+      out ahead of time.
+
+      Skipped when the shop is choosing a destination, since that is the A4 scan sheet and
+      its size belongs to the paper, not to the content.
+    */
+    let pageSize;
+    if (!job.chooseDestination) {
+      const heightPx = await worker.webContents.executeJavaScript(
+        'Math.ceil(document.documentElement.scrollHeight)',
+      );
+      // CSS pixels are 1/96 inch; Electron wants microns.
+      const micronsPerPx = 25400 / 96;
+      pageSize = {
+        width: 72000, // the XP-80T prints 72mm wide inside a 79.5mm roll
+        height: Math.max(Math.round(heightPx * micronsPerPx) + 4000, 20000),
+      };
+    }
 
     return await new Promise((resolve) => {
       worker.webContents.print(
@@ -132,10 +168,8 @@ ipcMain.handle('badawi:print', async (_event, job) => {
           // roll in that printer is 80mm wide and an A4 sheet sent to it is wasted paper.
           silent: !job.chooseDestination,
           printBackground: true,
-          // The paper size comes from the printer's own driver settings, which is where the
-          // 80mm roll is already configured. Forcing a height here would either clip a long
-          // receipt or feed blank paper after a short one.
           margins: { marginType: 'none' },
+          ...(pageSize ? { pageSize } : {}),
           ...(job.deviceName ? { deviceName: job.deviceName } : {}),
         },
         (success, failureReason) => {
@@ -148,6 +182,11 @@ ipcMain.handle('badawi:print', async (_event, job) => {
     return 'unavailable';
   } finally {
     if (!worker.isDestroyed()) worker.destroy();
+    try {
+      fs.unlinkSync(scratch);
+    } catch {
+      // A leftover file in the temp folder is not worth failing a print over.
+    }
   }
 });
 

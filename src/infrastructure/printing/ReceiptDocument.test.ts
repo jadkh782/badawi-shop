@@ -164,10 +164,23 @@ describe('a slip that is not an ordinary sale', () => {
 });
 
 describe('the document itself', () => {
-  it('is sized for 80mm paper', () => {
+  it('is sized for the 72mm printable area of an 80mm roll', () => {
+    // 72mm is the XP-80T's stated print width inside a 79.5mm roll.
     const html = ReceiptDocument.receipt(payload());
-    expect(html).toContain('size: 72mm auto');
+    expect(html).toContain('width: 72mm');
     expect(html).toContain('margin: 0');
+  });
+
+  it('never writes a page size mixing a length with auto', () => {
+    /*
+      The bug this exists for. "size: 72mm auto" reads like "this wide, as long as it needs
+      to be" and is invalid CSS — size takes auto, or one or two lengths, never both. The
+      browser discards the whole rule, the page falls back to the driver's paper length, and
+      a short receipt comes out on two feet of paper.
+    */
+    const html = ReceiptDocument.receipt(payload());
+    expect(html).not.toMatch(/size:\s*[\d.]+(mm|cm|in|px)\s+auto/);
+    expect(html).not.toMatch(/size:\s*auto\s+[\d.]+(mm|cm|in|px)/);
   });
 
   it('prints black on white, whatever the app looks like', () => {

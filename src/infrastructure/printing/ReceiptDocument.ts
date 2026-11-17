@@ -214,7 +214,18 @@ function wrap(title: string, body: string): string {
 <meta charset="utf-8">
 <title>${escape(title)}</title>
 <style>
-  @page { size: ${WIDTH_MM}mm auto; margin: 0; }
+  /*
+    No size here, only the margin. "72mm auto" looks like it should mean "this wide, as long
+    as it needs to be", and it is not valid CSS: size takes auto, or one or two lengths, and
+    mixing the two makes the browser throw the whole rule away. The page then fell back to
+    the driver's own paper length, which on a receipt printer is enormous, and a short
+    receipt came out on two feet of paper.
+
+    So the width is set on the body instead, and how long the page is left to the printer:
+    the till app measures the finished receipt and tells the printer exactly, and a browser
+    uses whatever the chosen printer's paper is set to.
+  */
+  @page { margin: 0; }
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
