@@ -42,9 +42,20 @@ export class ReceiptPrinting {
 
   /** A shelf ticket, which is how a generated barcode gets somewhere a scanner can reach. */
   async label(product: Product, settings: ShopSettings): Promise<PrintOutcome> {
-    return this.printer.print({
-      title: `Label ${product.name}`,
-      html: ReceiptDocument.label({
+    return this.labels([product], settings);
+  }
+
+  /**
+   * A ticket for each of these, in one job.
+   *
+   * Thirty articles needing a ticket after a stocktake is thirty trips to the shelf if they
+   * are printed one at a time, and thirty jobs in the queue for one of them to go missing in.
+   */
+  async labels(products: readonly Product[], settings: ShopSettings): Promise<PrintOutcome> {
+    if (products.length === 0) return 'unavailable';
+
+    const html = ReceiptDocument.labels(
+      products.map((product) => ({
         shop_name: settings.shopName,
         product_name: product.name,
         barcode: product.barcode?.value ?? null,
@@ -52,7 +63,15 @@ export class ReceiptPrinting {
         // A label is printed today for a shelf read today, so today's rate is the right one
         // here — unlike a receipt, which has to reproduce a past moment.
         price_lbp: settings.exchangeRate.toLbp(product.salePrice),
-      }),
+      })),
+    );
+
+    return this.printer.print({
+      title:
+        products.length === 1
+          ? `Label ${products[0]?.name ?? ''}`
+          : `${products.length} labels`,
+      html,
     });
   }
 

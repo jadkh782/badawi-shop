@@ -19,6 +19,8 @@
     "android:sync": "npm run build && npx cap sync android",
     "android:open": "npx cap open android",
     "android:apk": "npm run android:sync && node scripts/build-apk.mjs",
+    "exe": "node scripts/build-exe.mjs",
+    "exe:dev": "electron electron/main.js",
     "setup": "node scripts/setup.mjs",
     "docs:screens": "node scripts/capture-screens.mjs",
     "docs:manual": "node scripts/build-manual.mjs",
@@ -45,9 +47,12 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "electron": "^38.4.0",
+    "electron-builder": "^26.0.12",
     "puppeteer-core": "^25.9.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0",
     "vitest": "^3.2.4"
-  }
+  },
+  "main": "electron/main.js"
 }

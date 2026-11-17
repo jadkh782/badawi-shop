@@ -1,0 +1,41 @@
+# How the till app is packaged.
+#
+# Only the two Electron files go in. The shop itself is loaded from the live site, so there
+# is no copy of the app to ship, nothing to go stale, and an installer that is almost
+# entirely the Electron runtime. A change pushed to main reaches the till on its next start
+# without anyone reinstalling anything.
+appId: shop.badawi.till
+productName: Badawi Shop
+copyright: Badawi Shop
+
+directories:
+  output: dist-exe
+  buildResources: electron
+
+files:
+  - electron/**/*
+  - package.json
+
+win:
+  # Nothing here is signed, so the signing tools are not fetched. Besides saving a download,
+  # that bundle carries macOS symlinks which Windows refuses to unpack without Developer Mode
+  # or an admin shell, and failing a build over tooling for a step we do not perform would be
+  # a poor trade. The cost is that the exe carries no embedded icon or version metadata.
+  signAndEditExecutable: false
+  target:
+    # One installer rather than a portable exe: the till wants a Start menu entry and a
+    # desktop icon that survive a restart, not a file somebody has to go and find.
+    - target: nsis
+      arch: [x64]
+  artifactName: BadawiShop-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Badawi Shop
+
+# Nothing is fetched or published on build; the installer is a file to copy to the till.
+publish: null

@@ -86,6 +86,37 @@ export class ReceiptDocument {
    * to get a generated barcode somewhere a scanner can reach it.
    */
   static label(payload: LabelPayload): string {
+    return ReceiptDocument.labels([payload]);
+  }
+
+  /**
+   * A run of labels as one job.
+   *
+   * After a stocktake there may be thirty articles needing a ticket, and thirty separate
+   * print jobs is thirty chances for one to go missing in the queue. Each label breaks to
+   * its own page, which is what makes the printer feed and cut between them instead of
+   * running them together into an unreadable ribbon.
+   */
+  static labels(payloads: readonly LabelPayload[]): string {
+    const body = payloads
+      .map((payload, index) => {
+        const last = index === payloads.length - 1;
+        return `<div class="label"${last ? '' : ' style="page-break-after:always"'}>${oneLabel(
+          payload,
+        )}</div>`;
+      })
+      .join('');
+
+    const title =
+      payloads.length === 1
+        ? `Label ${payloads[0]?.product_name ?? ''}`
+        : `${payloads.length} labels`;
+    return wrap(title, body);
+  }
+}
+
+function oneLabel(payload: LabelPayload): string {
+  {
     const body = [
       `<div class="shop small">${escape(payload.shop_name)}</div>`,
       `<div class="item big">${escape(payload.product_name)}</div>`,
@@ -98,7 +129,7 @@ export class ReceiptDocument {
         : '<div class="muted center">No barcode</div>',
     ].join('');
 
-    return wrap(`Label ${payload.product_name}`, body);
+    return body;
   }
 }
 
@@ -224,6 +255,7 @@ function wrap(title: string, body: string): string {
   }
   .code { margin: 3mm 0 0; text-align: center; }
   .code svg { max-width: 100%; height: auto; }
+  .label { padding-bottom: 4mm; }
   .footer { margin-top: 3mm; text-align: center; white-space: pre-wrap; }
 </style>
 </head>

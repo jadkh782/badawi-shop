@@ -17,6 +17,10 @@ import {
   setPin,
 } from '@/presentation/providers/pin';
 import { AppShell } from '@/presentation/components/AppShell';
+import {
+  DesktopReceiptPrinter,
+  type KnownPrinter,
+} from '@/infrastructure/printing/DesktopReceiptPrinter';
 import { Sheet } from '@/presentation/components/Sheet';
 import { PinPad } from '@/presentation/components/PinPad';
 import { ResetSheet } from '@/presentation/components/ResetSheet';
@@ -34,6 +38,9 @@ export default function SettingsPage() {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [footer, setFooter] = useState('');
+  // Only ever populated inside the till app; a browser has no way to list printers.
+  const [printers, setPrinters] = useState<KnownPrinter[]>([]);
+  const [device, setDevice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -53,6 +60,14 @@ export default function SettingsPage() {
   useEffect(() => {
     setLockOn(pinIsSet());
     setCustom(hasCustomPin());
+  }, []);
+
+  // Which printers this machine has is a question only the till app can answer, and the
+  // answer is remembered on the machine, so it is read the same way the lock flags are.
+  useEffect(() => {
+    if (!DesktopReceiptPrinter.isAvailable()) return;
+    setDevice(DesktopReceiptPrinter.chosenPrinter());
+    void DesktopReceiptPrinter.listPrinters().then(setPrinters);
   }, []);
 
   const preview = (() => {
@@ -254,6 +269,45 @@ export default function SettingsPage() {
             </button>
           </section>
 
+          {/* Absent in a browser, which has no printer to choose and no way to ask. The till
+              app is the only place this question has an answer. */}
+          {printers.length > 0 && (
+            <section className="card p-4">
+              <p className="eyebrow">Printer</p>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
+                Which printer receipts go to. Pick the thermal one by name rather than
+                leaving it to Windows, or a receipt eventually comes out as a PDF nobody
+                asked for.
+              </p>
+
+              <div className="mt-3 flex flex-col gap-2">
+                <PrinterChoice
+                  label="Whatever Windows uses"
+                  detail="The system default printer"
+                  selected={device === null}
+                  onSelect={() => {
+                    DesktopReceiptPrinter.choosePrinter(null);
+                    setDevice(null);
+                    notify('Using the system default printer');
+                  }}
+                />
+                {printers.map((printer) => (
+                  <PrinterChoice
+                    key={printer.name}
+                    label={printer.name}
+                    detail={printer.isDefault ? 'Windows default' : printer.description}
+                    selected={device === printer.name}
+                    onSelect={() => {
+                      DesktopReceiptPrinter.choosePrinter(printer.name);
+                      setDevice(printer.name);
+                      notify(`Receipts will print to ${printer.name}`, 'success');
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Where the shop decides what "what did this cost" means. Both answers are
               honest; which one is right depends on how the shop actually thinks about its
               stock, which is not something the app can work out on its behalf. */}
@@ -451,6 +505,39 @@ function CostChoice({
       <span className="mt-1 block text-xs leading-relaxed text-[var(--color-faint)]">
         {detail}
       </span>
+    </button>
+  );
+}
+
+/** The same aria-pressed card the cost-method choice uses, so the page reads as one thing. */
+function PrinterChoice({
+  label,
+  detail,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  detail: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className="rounded-2xl border px-4 py-3 text-left"
+      style={{
+        borderColor: selected ? 'var(--color-stock)' : 'var(--color-line)',
+        background: selected ? 'var(--color-stock-dim)' : 'transparent',
+      }}
+    >
+      <span className="block text-sm font-semibold">{label}</span>
+      {detail && (
+        <span className="mt-1 block text-xs leading-relaxed text-[var(--color-faint)]">
+          {detail}
+        </span>
+      )}
     </button>
   );
 }

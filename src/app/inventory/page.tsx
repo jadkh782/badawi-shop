@@ -8,6 +8,7 @@ import { container } from '@/container';
 import { messageFor } from '@/infrastructure/supabase/errors';
 import { beepUnknown, buzzError, primeAudio } from '@/presentation/hooks/feedback';
 import { useToast } from '@/presentation/providers/ToastProvider';
+import { useSettings } from '@/presentation/providers/SettingsProvider';
 import { AppShell } from '@/presentation/components/AppShell';
 import { Amount } from '@/presentation/components/Amount';
 import { ScannerSheet } from '@/presentation/components/ScannerSheet';
@@ -24,6 +25,7 @@ import { StockBadge, EmptyInventory } from '@/presentation/components/InventoryP
 export default function InventoryPage() {
   const router = useRouter();
   const { notify } = useToast();
+  const { settings } = useSettings();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -32,6 +34,7 @@ export default function InventoryPage() {
   const [lowOnly, setLowOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     void container().categories.list().then(setCategories).catch(() => setCategories([]));
@@ -80,6 +83,25 @@ export default function InventoryPage() {
     [router, notify],
   );
 
+  /*
+    Only the codes this shop generated. An article that came with a barcode printed on the
+    box already has a label on it, and reprinting those would be a pile of paper nobody
+    needs — the point of this is the articles that arrived with nothing to scan.
+  */
+  const needLabels = products.filter((product) => product.barcode?.isInStore ?? false);
+
+  async function printLabels() {
+    setPrinting(true);
+    try {
+      const outcome = await container().receipts.labels(needLabels, settings);
+      if (outcome === 'unavailable') notify('No printer could be reached', 'error');
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setPrinting(false);
+    }
+  }
+
   return (
     <>
       <AppShell
@@ -127,6 +149,23 @@ export default function InventoryPage() {
             />
           </div>
         </div>
+
+        {/* Shown only when the shop has generated codes that are not on a shelf yet, so it
+            stays out of the way for an inventory of articles that came with barcodes. */}
+        {needLabels.length > 0 && (
+          <div className="px-4 pt-3">
+            <button
+              type="button"
+              className="btn btn-ghost w-full"
+              disabled={printing}
+              onClick={() => void printLabels()}
+            >
+              {printing
+                ? 'Printing...'
+                : `Print ${needLabels.length} label${needLabels.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        )}
 
         <div className="strip mt-3 px-4 pb-1">
           <button

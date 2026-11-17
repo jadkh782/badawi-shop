@@ -30,3 +30,6 @@ docs/manual.html
 # Local secrets. Every .env variant is ignored except the committed template.
 .env*
 !.env.example
+
+# The till installer. Built outside OneDrive, copied back here; never committed.
+dist-exe/

@@ -38,6 +38,7 @@ import {
 } from '@/infrastructure/supabase/SupabaseBudgetRepository';
 import { ClientReportExporter } from '@/infrastructure/export/ClientReportExporter';
 import { BrowserReceiptPrinter } from '@/infrastructure/printing/BrowserReceiptPrinter';
+import { DesktopReceiptPrinter } from '@/infrastructure/printing/DesktopReceiptPrinter';
 import { ReceiptPrinting } from '@/infrastructure/printing/ReceiptPrinting';
 import { BrowserFileSaver } from '@/infrastructure/files/BrowserFileSaver';
 import { CapacitorFileSaver } from '@/infrastructure/files/CapacitorFileSaver';
@@ -125,11 +126,12 @@ export function buildContainer(): Container {
     ? new CapacitorFileSaver()
     : new BrowserFileSaver();
   /*
-    One printer today, printing through whatever the device has installed. The desktop app
-    will add a second that prints straight to the till printer with no dialog; when it does,
-    this becomes the same ternary the file saver uses and nothing above it changes.
+    Inside the till app a receipt goes straight to the printer; in a browser it goes through
+    the print dialog. The same document either way — only who has to confirm it differs.
   */
-  const receiptPrinter: IReceiptPrinter = new BrowserReceiptPrinter();
+  const receiptPrinter: IReceiptPrinter = DesktopReceiptPrinter.isAvailable()
+    ? new DesktopReceiptPrinter()
+    : new BrowserReceiptPrinter();
 
   return {
     products,

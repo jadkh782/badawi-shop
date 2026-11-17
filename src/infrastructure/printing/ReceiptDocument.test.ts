@@ -224,6 +224,29 @@ describe('a shelf label', () => {
     expect(html).toContain('<svg');
   });
 
+  it('prints a run of them as one job, cut between each', () => {
+    const html = ReceiptDocument.labels([
+      { shop_name: 'S', product_name: 'One', barcode: '2012345678909', price_cents: 100, price_lbp: null },
+      { shop_name: 'S', product_name: 'Two', barcode: '2034981127775', price_cents: 200, price_lbp: null },
+      { shop_name: 'S', product_name: 'Three', barcode: null, price_cents: 300, price_lbp: null },
+    ]);
+    expect(html).toContain('One');
+    expect(html).toContain('Two');
+    expect(html).toContain('Three');
+    // A break after every label but the last, so the printer feeds and cuts between them
+    // instead of running them into one unreadable ribbon.
+    expect(html.match(/page-break-after:always/g)).toHaveLength(2);
+  });
+
+  it('is one document, not several', () => {
+    const html = ReceiptDocument.labels([
+      { shop_name: 'S', product_name: 'One', barcode: null, price_cents: 100, price_lbp: null },
+      { shop_name: 'S', product_name: 'Two', barcode: null, price_cents: 200, price_lbp: null },
+    ]);
+    expect(html.match(/<!doctype html>/gi)).toHaveLength(1);
+    expect(html).toContain('<title>2 labels</title>');
+  });
+
   it('says so plainly when an article has no barcode yet', () => {
     const html = ReceiptDocument.label({
       shop_name: 'Beit Badawi',
