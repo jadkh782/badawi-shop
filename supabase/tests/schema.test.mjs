@@ -68,6 +68,14 @@ for (const file of files) {
   }
 }
 console.log(`\nApplied ${files.length} migrations.\n`);
+
+/** The EAN-13 check digit, computed in JS so the SQL version is checked against something. */
+function checkDigit(first12) {
+  let sum = 0;
+  for (let i = 0; i < 12; i += 1) sum += Number(first12[i]) * (i % 2 === 0 ? 1 : 3);
+  return String((10 - (sum % 10)) % 10);
+}
+
 const one = async (sql, params) => (await db.query(sql, params)).rows[0];
 const all = async (sql, params) => (await db.query(sql, params)).rows;
 
@@ -771,6 +779,66 @@ eq('and none of the refused attempts moved the balance',
 // Rent falls due whether or not the week was good, so it records and warns rather than refusing.
 await db.query(`select pay_out('drawing', 99999999, 'everything')`);
 check('the shop is allowed to go overdrawn', Number((await budget()).balance_cents) < 0);
+
+// --- giving a shelf its barcodes --------------------------------------------
+console.log('\nbarcodes for a shelf');
+
+// The check digit has to agree with the one the app computes, or a code generated here
+// fails validation there.
+eq('the database computes the same check digit the app does',
+  (await one(`select ean13_check_digit('590123412345') d`)).d, '7');
+eq('and on another known code', (await one(`select ean13_check_digit('400638133393') d`)).d, '1');
+
+const shelfCat = await one(`insert into categories (name, color) values ('Shelf', '#111')
+                            returning id`);
+const bare = [];
+for (let i = 0; i < 5; i++) {
+  bare.push((await one(
+    `insert into products (name, category_id, cost_price_cents, sale_price_cents,
+                           quantity_in_stock, low_stock_threshold, unit)
+     values ($1, $2, 100, 200, 3, 1, 'piece') returning id`,
+    [`Bare ${i}`, shelfCat.id],
+  )).id);
+}
+// One that already carries a manufacturer's code, which must survive untouched.
+const hasCode = await one(
+  `insert into products (barcode, name, category_id, cost_price_cents, sale_price_cents,
+                         quantity_in_stock, low_stock_threshold, unit)
+   values ('5901234123457', 'Has code', $1, 100, 200, 3, 1, 'piece') returning id`,
+  [shelfCat.id],
+);
+
+const made = await one(`select generate_barcodes($1::uuid[]) n`, [[...bare, hasCode.id]]);
+eq('it gives a code to each article that had none', made.n, 5);
+
+const coded = await all(
+  `select barcode from products where id = any($1::uuid[]) order by barcode`, [bare]);
+check('every one of them is an in-store code',
+  coded.every((r) => r.barcode.length === 13 && r.barcode.startsWith('20')),
+  JSON.stringify(coded.map((r) => r.barcode)));
+check('and every one carries a correct check digit',
+  coded.every((r) => r.barcode[12] === checkDigit(r.barcode.slice(0, 12))),
+  JSON.stringify(coded.map((r) => r.barcode)));
+eq('they are all different', new Set(coded.map((r) => r.barcode)).size, 5);
+
+eq('an article that came with a barcode keeps the one it had',
+  (await one('select barcode from products where id = $1', [hasCode.id])).barcode,
+  '5901234123457');
+
+eq('running it again assigns nothing, because none are missing now',
+  (await one(`select generate_barcodes($1::uuid[]) n`, [[...bare, hasCode.id]])).n, 0);
+
+eq('an empty list is not an error', (await one(`select generate_barcodes('{}'::uuid[]) n`)).n, 0);
+eq('neither is null', (await one(`select generate_barcodes(null) n`)).n, 0);
+
+// Only the articles handed over, so generating for one shelf cannot touch another.
+const other = await one(
+  `insert into products (name, category_id, cost_price_cents, sale_price_cents,
+                         quantity_in_stock, low_stock_threshold, unit)
+   values ('Untouched', $1, 100, 200, 1, 1, 'piece') returning id`, [shelfCat.id]);
+await db.query(`select generate_barcodes($1::uuid[])`, [bare]);
+eq('an article not in the list is left alone',
+  (await one('select barcode from products where id = $1', [other.id])).barcode, null);
 
 // --- reset -----------------------------------------------------------------
 console.log('\nreset');

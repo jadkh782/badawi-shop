@@ -104,6 +104,16 @@ export interface IProductWriter {
    */
   archive(id: string, reason?: string): Promise<ArchiveResult>;
   /**
+   * Gives each of these a barcode, where it has none.
+   *
+   * In bulk because the alternative is one request per article, and a shop can easily hold
+   * hundreds with nothing scannable on them. Articles that already carry a code are left
+   * alone: the one printed on the box is the better code, since it is already on the thing.
+   *
+   * Returns how many were actually given one.
+   */
+  generateBarcodes(ids: readonly string[]): Promise<number>;
+  /**
    * Moves stock, writes the ledger entry, restates the cost and moves the money, all in one
    * transaction.
    */

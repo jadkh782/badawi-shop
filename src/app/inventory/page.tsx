@@ -35,6 +35,11 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [coding, setCoding] = useState(false);
+  const [confirmCodes, setConfirmCodes] = useState(false);
+  // Bumped to pull the list again after something changes it server-side. The codes are
+  // generated in the database, so the only way to learn them is to ask for the rows back.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     void container().categories.list().then(setCategories).catch(() => setCategories([]));
@@ -62,7 +67,7 @@ export default function InventoryPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search, categoryId, lowOnly, notify]);
+  }, [search, categoryId, lowOnly, notify, reloadKey]);
 
   const onScan = useCallback(
     async (code: string) => {
@@ -89,6 +94,32 @@ export default function InventoryPage() {
     needs — the point of this is the articles that arrived with nothing to scan.
   */
   const needLabels = products.filter((product) => product.barcode?.isInStore ?? false);
+
+  /*
+    Articles on screen with nothing scannable on them. Scoped to the filter rather than the
+    whole catalogue on purpose: a shop works a shelf at a time, and committing six hundred
+    barcodes on one tap is a decision nobody gets to look at first.
+  */
+  const needCodes = products.filter((product) => product.barcode === null);
+
+  async function giveBarcodes() {
+    setConfirmCodes(false);
+    setCoding(true);
+    try {
+      const made = await container().products.generateBarcodes(needCodes.map((p) => p.id));
+      notify(
+        made === 0
+          ? 'Every article here already had a barcode'
+          : `${made} article${made === 1 ? '' : 's'} given a barcode`,
+        'success',
+      );
+      setReloadKey((key) => key + 1);
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setCoding(false);
+    }
+  }
 
   async function printLabels() {
     setPrinting(true);
@@ -150,20 +181,54 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Shown only when the shop has generated codes that are not on a shelf yet, so it
-            stays out of the way for an inventory of articles that came with barcodes. */}
-        {needLabels.length > 0 && (
-          <div className="px-4 pt-3">
-            <button
-              type="button"
-              className="btn btn-ghost w-full"
-              disabled={printing}
-              onClick={() => void printLabels()}
-            >
-              {printing
-                ? 'Printing...'
-                : `Print ${needLabels.length} label${needLabels.length === 1 ? '' : 's'}`}
-            </button>
+        {(needCodes.length > 0 || needLabels.length > 0) && (
+          <div className="flex flex-col gap-2 px-4 pt-3">
+            {/* Two taps, because this writes a code onto every article on screen and the
+                first tap is the one that says how many that is. */}
+            {needCodes.length > 0 &&
+              (confirmCodes ? (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-ghost flex-1"
+                    onClick={() => setConfirmCodes(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-stock flex-1"
+                    disabled={coding}
+                    onClick={() => void giveBarcodes()}
+                  >
+                    {coding ? 'Working...' : `Yes, code ${needCodes.length}`}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-ghost w-full"
+                  disabled={coding}
+                  onClick={() => setConfirmCodes(true)}
+                >
+                  {`Give ${needCodes.length} article${
+                    needCodes.length === 1 ? '' : 's'
+                  } a barcode`}
+                </button>
+              ))}
+
+            {needLabels.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-ghost w-full"
+                disabled={printing}
+                onClick={() => void printLabels()}
+              >
+                {printing
+                  ? 'Printing...'
+                  : `Print ${needLabels.length} label${needLabels.length === 1 ? '' : 's'}`}
+              </button>
+            )}
           </div>
         )}
 

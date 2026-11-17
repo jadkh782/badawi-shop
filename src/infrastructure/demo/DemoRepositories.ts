@@ -113,6 +113,10 @@ export class DemoProductRepository implements IProductRepository {
     return store().archive(id, reason ?? null);
   }
 
+  async generateBarcodes(ids: readonly string[]): Promise<number> {
+    return store().generateBarcodes(ids);
+  }
+
   async adjustStock(id: string, change: StockChange): Promise<StockChangeResult> {
     return store().adjust(id, change);
   }

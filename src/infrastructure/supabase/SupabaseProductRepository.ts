@@ -133,6 +133,13 @@ export class SupabaseProductRepository implements IProductRepository {
     };
   }
 
+  async generateBarcodes(ids: readonly string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const { data, error } = await this.db.rpc('generate_barcodes', { p_product_ids: ids });
+    if (error) throw translateError(error);
+    return Number(data ?? 0);
+  }
+
   async adjustStock(id: string, change: StockChange): Promise<StockChangeResult> {
     const { data, error } = await this.db.rpc('adjust_stock', {
       p_product_id: id,

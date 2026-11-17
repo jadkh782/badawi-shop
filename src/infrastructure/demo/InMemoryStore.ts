@@ -331,6 +331,47 @@ export class InMemoryStore {
    * Priced from the batches rather than from today's average, so an article holding stock
    * bought at two prices gives back what was really paid for each of them.
    */
+  /** The same rule the database applies: a code each, and never over one already there. */
+  generateBarcodes(ids: readonly string[]): number {
+    const taken = new Set(
+      this.products.map((p) => p.barcode?.value).filter((v): v is string => Boolean(v)),
+    );
+    let made = 0;
+
+    for (const id of ids) {
+      const product = this.products.find((p) => p.id === id);
+      if (!product || product.barcode || !product.isActive) continue;
+
+      let code = Barcode.generateInStore();
+      while (taken.has(code.value)) code = Barcode.generateInStore();
+      taken.add(code.value);
+
+      this.replaceProduct(
+        new Product({
+          id: product.id,
+          barcode: code,
+          name: product.name,
+          categoryId: product.categoryId,
+          categoryName: product.categoryName,
+          costPrice: product.costPrice,
+          lastCostPrice: product.lastCostPrice,
+          salePrice: product.salePrice,
+          stock: product.stock,
+          lowStockThreshold: product.lowStockThreshold,
+          unit: product.unit,
+          notes: product.notes,
+          isActive: product.isActive,
+          variantSize: product.variantSize,
+          variantTrait: product.variantTrait,
+          variantBase: product.variantBase,
+        }),
+      );
+      made += 1;
+    }
+
+    return made;
+  }
+
   archive(productId: string, reason: string | null): ArchiveResult {
     const existing = this.products.find((p) => p.id === productId);
     if (!existing) throw new Error('That product no longer exists');
