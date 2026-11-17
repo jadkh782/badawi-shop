@@ -199,27 +199,33 @@ export class DemoSettingsRepository implements ISettingsRepository {
   }
 
   async updateExchangeRate(usdToLbp: number, rounding: number): Promise<ShopSettings> {
-    store().settings = new ShopSettings(
-      store().settings.shopName,
-      ExchangeRate.create(usdToLbp, rounding),
-      new Date(),
-      store().settings.costMethod,
-    );
+    store().settings = store().settings.with({
+      exchangeRate: ExchangeRate.create(usdToLbp, rounding),
+      rateUpdatedAt: new Date(),
+    });
     return store().settings;
   }
 
   async updateShopName(name: string): Promise<ShopSettings> {
-    store().settings = new ShopSettings(
-      name,
-      store().settings.exchangeRate,
-      store().settings.rateUpdatedAt,
-      store().settings.costMethod,
-    );
+    store().settings = store().settings.with({ shopName: name });
     return store().settings;
   }
 
   async updateCostMethod(method: CostMethod): Promise<ShopSettings> {
     return store().setCostMethod(method);
+  }
+
+  async updateReceiptDetails(
+    phone: string | null,
+    address: string | null,
+    footer: string | null,
+  ): Promise<ShopSettings> {
+    store().settings = store().settings.with({
+      shopPhone: phone,
+      shopAddress: address,
+      receiptFooter: footer,
+    });
+    return store().settings;
   }
 }
 

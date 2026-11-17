@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { BudgetSummary, Category } from '@/domain';
-import { Product } from '@/domain';
+import { Barcode, Product } from '@/domain';
 import { Money } from '@/domain';
 import type { ProductFormInput } from '@/application/use-cases';
 import { SaveProduct } from '@/application/use-cases';
@@ -123,6 +123,8 @@ export function ProductForm({
   // Only shelves that say they come in sizes get the extra fields. Everywhere else the form
   // is exactly what it always was.
   const variantShelf = shelf?.hasVariants ? shelf : null;
+  const generated = Barcode.tryCreate(value.barcode)?.isInStore ?? false;
+
   const assembled = Product.assembleName(value.name, value.variantTrait, value.variantSize);
 
   // Brands already on the shelf, and the tastes already recorded for the brand being typed.
@@ -180,6 +182,26 @@ export function ProductForm({
             <ScanIcon className="h-5 w-5" />
           </button>
         </div>
+
+        {/* Only offered when there is nothing to scan. An article that came with a barcode
+            on the box keeps it: generating a second code for the same thing is how one
+            article quietly becomes two. */}
+        {value.barcode.trim() === '' && (
+          <button
+            type="button"
+            className="btn btn-ghost mt-2 w-full"
+            onClick={() => set({ barcode: Barcode.generateInStore().value })}
+          >
+            Generate a barcode
+          </button>
+        )}
+
+        {generated && (
+          <p className="mt-2 text-xs leading-relaxed text-[var(--color-faint)]">
+            Made for this shop. Save the article, then print a label for the shelf so it can
+            be scanned.
+          </p>
+        )}
       </div>
 
       <div>

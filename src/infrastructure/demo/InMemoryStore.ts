@@ -86,7 +86,13 @@ export class InMemoryStore {
   products: Product[] = demoProducts();
   sales: Sale[] = [];
   cash: CashMovement[] = [];
-  settings = new ShopSettings('Badawi Shop (demo)', ExchangeRate.create(89000, 1000), new Date());
+  settings = new ShopSettings({
+    shopName: 'Badawi Shop (demo)',
+    exchangeRate: ExchangeRate.create(89000, 1000),
+    rateUpdatedAt: new Date(),
+    shopPhone: '01 234 567',
+    receiptFooter: 'Thank you',
+  });
 
   batches: Batch[] = [];
   priceHistory: PriceChange[] = [];
@@ -507,12 +513,7 @@ export class InMemoryStore {
   }
 
   setCostMethod(method: CostMethod): ShopSettings {
-    this.settings = new ShopSettings(
-      this.settings.shopName,
-      this.settings.exchangeRate,
-      this.settings.rateUpdatedAt,
-      method,
-    );
+    this.settings = this.settings.with({ costMethod: method });
 
     if (method === 'average') {
       for (const product of this.products) {

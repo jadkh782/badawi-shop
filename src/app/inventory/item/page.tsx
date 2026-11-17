@@ -11,6 +11,7 @@ import { AppShell } from '@/presentation/components/AppShell';
 import { ProductForm, formFrom } from '@/presentation/components/ProductForm';
 import { RestockSheet } from '@/presentation/components/RestockSheet';
 import { PriceHistory } from '@/presentation/components/PriceHistory';
+import { useSettings } from '@/presentation/providers/SettingsProvider';
 
 /**
  * Editing an article.
@@ -28,11 +29,13 @@ function EditProduct() {
   const search = useSearchParams();
   const id = search.get('id') ?? '';
   const { notify } = useToast();
+  const { settings } = useSettings();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductFormInput | null>(null);
   const [busy, setBusy] = useState(false);
   const [restocking, setRestocking] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [notFound, setNotFound] = useState(false);
   // Bumped after a delivery so the price trail below picks up the row it just wrote.
   const [reloadKey, setReloadKey] = useState(0);
@@ -68,6 +71,19 @@ function EditProduct() {
       notify(messageFor(error), 'error');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function printLabel() {
+    if (!product) return;
+    setPrinting(true);
+    try {
+      const outcome = await container().receipts.label(product, settings);
+      if (outcome === 'unavailable') notify('No printer could be reached', 'error');
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setPrinting(false);
     }
   }
 
@@ -139,9 +155,21 @@ function EditProduct() {
                 </span>
               </p>
             </div>
-            <button type="button" className="btn btn-ghost" onClick={() => setRestocking(true)}>
-              Restock
-            </button>
+            <div className="flex shrink-0 gap-2">
+              {/* A generated barcode is only useful once it is somewhere a scanner can
+                  reach, which on a receipt printer means a strip for the shelf edge. */}
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={printing}
+                onClick={() => void printLabel()}
+              >
+                {printing ? '...' : 'Label'}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => setRestocking(true)}>
+                Restock
+              </button>
+            </div>
           </div>
 
           {(product.isLowStock || product.isOutOfStock) && (

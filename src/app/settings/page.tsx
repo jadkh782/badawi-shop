@@ -31,6 +31,9 @@ export default function SettingsPage() {
   const [rateInput, setRateInput] = useState('');
   const [rounding, setRounding] = useState('1000');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [footer, setFooter] = useState('');
   const [busy, setBusy] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -42,6 +45,9 @@ export default function SettingsPage() {
     setRateInput(String(settings.exchangeRate.usdToLbp));
     setRounding(String(settings.exchangeRate.rounding));
     setName(settings.shopName);
+    setPhone(settings.shopPhone ?? '');
+    setAddress(settings.shopAddress ?? '');
+    setFooter(settings.receiptFooter ?? '');
   }, [settings]);
 
   useEffect(() => {
@@ -94,6 +100,19 @@ export default function SettingsPage() {
       await container().updateSettings.setShopName(name);
       await refresh();
       notify('Shop name updated', 'success');
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveReceipt() {
+    setBusy(true);
+    try {
+      await container().updateSettings.setReceiptDetails(phone, address, footer);
+      await refresh();
+      notify('Receipt details updated', 'success');
     } catch (error) {
       notify(messageFor(error), 'error');
     } finally {
@@ -177,6 +196,61 @@ export default function SettingsPage() {
               onClick={() => void saveName()}
             >
               Save name
+            </button>
+          </section>
+
+          {/* Printed, not shown. Everything here exists only on paper, which is why it sits
+              apart from the shop name rather than beside it. */}
+          <section className="card p-4">
+            <p className="eyebrow">On the receipt</p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
+              Printed under the shop name and at the bottom of every receipt. Leave any of
+              them empty and that line is simply left off.
+            </p>
+
+            <label className="eyebrow mt-4 block" htmlFor="shop-phone">
+              Phone
+            </label>
+            <input
+              id="shop-phone"
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              inputMode="tel"
+              placeholder="01 234 567"
+              className="field tnum mt-2"
+            />
+
+            <label className="eyebrow mt-4 block" htmlFor="shop-address">
+              Address
+            </label>
+            <input
+              id="shop-address"
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+              placeholder="Street, town"
+              className="field mt-2"
+            />
+
+            <label className="eyebrow mt-4 block" htmlFor="receipt-footer">
+              Message at the bottom
+            </label>
+            <textarea
+              id="receipt-footer"
+              value={footer}
+              onChange={(event) => setFooter(event.target.value)}
+              rows={3}
+              placeholder="Thank you"
+              className="field mt-2 resize-none"
+              style={{ minHeight: 0 }}
+            />
+
+            <button
+              type="button"
+              className="btn btn-ghost mt-3 w-full"
+              disabled={busy}
+              onClick={() => void saveReceipt()}
+            >
+              Save receipt details
             </button>
           </section>
 

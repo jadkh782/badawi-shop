@@ -78,6 +78,9 @@ export interface AppSettingsRow {
   lbp_rounding: number;
   rate_updated_at: string | null;
   cost_method: 'average' | 'batch';
+  shop_phone: string | null;
+  shop_address: string | null;
+  receipt_footer: string | null;
 }
 
 export interface ReportSummaryRow {

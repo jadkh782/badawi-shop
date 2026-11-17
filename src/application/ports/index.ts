@@ -26,3 +26,4 @@ export type { IAuthService, ShopUser } from './IAuthService';
 export type { IBarcodeScanner, BarcodeHandler } from './IBarcodeScanner';
 export type { IReportExporter, ExportedReport } from './IReportExporter';
 export type { IFileSaver, SaveOutcome } from './IFileSaver';
+export type { IReceiptPrinter, PrintJob, PrintOutcome } from './IReceiptPrinter';

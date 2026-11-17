@@ -85,12 +85,17 @@ export function toCategory(row: CategoryRow): Category {
 }
 
 export function toSettings(row: AppSettingsRow): ShopSettings {
-  return new ShopSettings(
-    row.shop_name,
-    ExchangeRate.create(num(row.usd_to_lbp_rate), num(row.lbp_rounding) || 1000),
-    row.rate_updated_at ? new Date(row.rate_updated_at) : null,
-    row.cost_method === 'batch' ? 'batch' : 'average',
-  );
+  return new ShopSettings({
+    shopName: row.shop_name,
+    exchangeRate: ExchangeRate.create(num(row.usd_to_lbp_rate), num(row.lbp_rounding) || 1000),
+    rateUpdatedAt: row.rate_updated_at ? new Date(row.rate_updated_at) : null,
+    // Re-narrowed rather than trusted: the column has a check constraint, but a mapper that
+    // believes the database is a mapper that breaks oddly when the database is restored.
+    costMethod: row.cost_method === 'batch' ? 'batch' : 'average',
+    shopPhone: row.shop_phone ?? null,
+    shopAddress: row.shop_address ?? null,
+    receiptFooter: row.receipt_footer ?? null,
+  });
 }
 
 export function toStockBatch(row: StockBatchRow): StockBatch {

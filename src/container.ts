@@ -7,6 +7,7 @@ import type {
   IProductRepository,
   IFileSaver,
   IReportExporter,
+  IReceiptPrinter,
   IReportRepository,
   ISaleRepository,
   ISettingsRepository,
@@ -36,6 +37,8 @@ import {
   SupabaseShopReset,
 } from '@/infrastructure/supabase/SupabaseBudgetRepository';
 import { ClientReportExporter } from '@/infrastructure/export/ClientReportExporter';
+import { BrowserReceiptPrinter } from '@/infrastructure/printing/BrowserReceiptPrinter';
+import { ReceiptPrinting } from '@/infrastructure/printing/ReceiptPrinting';
 import { BrowserFileSaver } from '@/infrastructure/files/BrowserFileSaver';
 import { CapacitorFileSaver } from '@/infrastructure/files/CapacitorFileSaver';
 import {
@@ -70,6 +73,7 @@ export interface Container {
   shopReset: IShopReset;
   exporter: IReportExporter;
   fileSaver: IFileSaver;
+  receipts: ReceiptPrinting;
 
   checkoutSale: CheckoutSale;
   findProductByBarcode: FindProductByBarcode;
@@ -120,6 +124,12 @@ export function buildContainer(): Container {
   const fileSaver: IFileSaver = CapacitorFileSaver.isAvailable()
     ? new CapacitorFileSaver()
     : new BrowserFileSaver();
+  /*
+    One printer today, printing through whatever the device has installed. The desktop app
+    will add a second that prints straight to the till printer with no dialog; when it does,
+    this becomes the same ternary the file saver uses and nothing above it changes.
+  */
+  const receiptPrinter: IReceiptPrinter = new BrowserReceiptPrinter();
 
   return {
     products,
@@ -132,6 +142,7 @@ export function buildContainer(): Container {
     shopReset,
     exporter,
     fileSaver,
+    receipts: new ReceiptPrinting(receiptPrinter),
 
     checkoutSale: new CheckoutSale(sales),
     findProductByBarcode: new FindProductByBarcode(products),

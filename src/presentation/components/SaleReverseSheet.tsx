@@ -5,6 +5,7 @@ import { Money, type SaleRecord, type SoldLine } from '@/domain';
 import { container } from '@/container';
 import { messageFor } from '@/infrastructure/supabase/errors';
 import { useToast } from '@/presentation/providers/ToastProvider';
+import { useSettings } from '@/presentation/providers/SettingsProvider';
 import { Sheet } from './Sheet';
 
 type Tab = 'void' | 'refund';
@@ -32,11 +33,13 @@ export function SaleReverseSheet({
   onDone: () => void;
 }) {
   const { notify } = useToast();
+  const { settings } = useSettings();
   const [tab, setTab] = useState<Tab>('refund');
   const [lines, setLines] = useState<SoldLine[] | null>(null);
   const [picked, setPicked] = useState<Record<string, number>>({});
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -90,6 +93,34 @@ export function SaleReverseSheet({
     }
   }
 
+  /**
+   * Reprinting an old sale.
+   *
+   * This sheet holds a SaleRecord, which has no subtotal, no discount and no rate, so the
+   * full sale is fetched rather than the receipt guessing at them. Guessing would be worst
+   * exactly where it matters: the rate is frozen per sale, and today's would print pounds
+   * the customer never handed over.
+   */
+  async function reprint() {
+    setPrinting(true);
+    try {
+      const full = await container().sales.findById(sale.id);
+      if (!full) {
+        notify('That sale could not be read back', 'error');
+        return;
+      }
+      const outcome = await container().receipts.sale(full, settings, {
+        reprint: true,
+        voided: sale.isVoided,
+      });
+      if (outcome === 'unavailable') notify('No printer could be reached', 'error');
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setPrinting(false);
+    }
+  }
+
   return (
     <Sheet open={open} onClose={onClose} title={`Sale ${sale.id.slice(0, 8)}`}>
       <div className="card mb-4 flex items-center justify-between p-4">
@@ -113,6 +144,17 @@ export function SaleReverseSheet({
           )}
         </div>
       </div>
+
+      {/* Above the two reversal chips on purpose: reprinting is about the sale, not about
+          undoing it, and it stays available for a sale that has already been voided. */}
+      <button
+        type="button"
+        className="btn btn-ghost mb-4 w-full"
+        disabled={printing}
+        onClick={() => void reprint()}
+      >
+        {printing ? 'Printing...' : 'Reprint receipt'}
+      </button>
 
       <div className="mb-4 flex gap-2">
         <button

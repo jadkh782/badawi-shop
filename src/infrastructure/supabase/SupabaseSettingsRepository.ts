@@ -38,6 +38,21 @@ export class SupabaseSettingsRepository implements ISettingsRepository {
    * cost, which has to happen in the same transaction as the setting itself. Half of that
    * applied is a shop whose till stops asking while its books still hold two prices.
    */
+  async updateReceiptDetails(
+    phone: string | null,
+    address: string | null,
+    footer: string | null,
+  ): Promise<ShopSettings> {
+    const { data, error } = await this.db
+      .from('app_settings')
+      .update({ shop_phone: phone, shop_address: address, receipt_footer: footer })
+      .eq('id', 1)
+      .select('*')
+      .single();
+    if (error) throw translateError(error);
+    return toSettings(data as AppSettingsRow);
+  }
+
   async updateCostMethod(method: CostMethod): Promise<ShopSettings> {
     const { error } = await this.db.rpc('set_cost_method', { p_method: method });
     if (error) throw translateError(error);

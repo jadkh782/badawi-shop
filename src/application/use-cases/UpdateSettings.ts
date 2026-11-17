@@ -28,6 +28,25 @@ export class UpdateSettings {
     return this.settings.updateCostMethod(method);
   }
 
+  /**
+   * The details printed on a receipt.
+   *
+   * Every one of them is optional: a receipt with no phone number simply has no phone line.
+   * Blank is therefore stored as null rather than an empty string, so the document builder
+   * has one thing to check instead of two.
+   */
+  async setReceiptDetails(
+    phone: string,
+    address: string,
+    footer: string,
+  ): Promise<ShopSettings> {
+    const tidy = (value: string) => {
+      const trimmed = value.trim();
+      return trimmed.length === 0 ? null : trimmed;
+    };
+    return this.settings.updateReceiptDetails(tidy(phone), tidy(address), tidy(footer));
+  }
+
   async setShopName(name: string): Promise<ShopSettings> {
     const trimmed = name.trim();
     if (trimmed.length === 0) {

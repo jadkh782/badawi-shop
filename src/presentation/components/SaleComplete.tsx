@@ -25,7 +25,7 @@ export function SaleComplete({
   onNewSale: () => void;
   onDone: () => void;
 }) {
-  const { rate } = useSettings();
+  const { rate, settings } = useSettings();
   const { notify } = useToast();
   const [sale, setSale] = useState<Sale | null>(null);
   const [tendered, setTendered] = useState('');
@@ -33,6 +33,7 @@ export function SaleComplete({
   const [confirmingVoid, setConfirmingVoid] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [voided, setVoided] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     void container().sales.findById(saleId).then(setSale).catch(() => setSale(null));
@@ -56,6 +57,19 @@ export function SaleComplete({
   const dueValue = sale ? (paidInUsd ? sale.total.dollars : sale.totalLbp) : 0;
   const given = Number(tendered.replace(/[,\s]/g, '')) || 0;
   const change = given > 0 ? given - dueValue : 0;
+
+  async function printReceipt() {
+    if (!sale) return;
+    setPrinting(true);
+    try {
+      const outcome = await container().receipts.sale(sale, settings);
+      if (outcome === 'unavailable') notify('No printer could be reached', 'error');
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   return (
     <main className="safe-top flex min-h-dvh flex-col px-4 pb-6 pt-6">
@@ -111,6 +125,19 @@ export function SaleComplete({
               </p>
             )}
           </div>
+        )}
+
+        {/* Its own action rather than a third button in the footer, where Done and Next sale
+            are both navigation and a third equal-width button crowds a phone. */}
+        {sale && !voided && (
+          <button
+            type="button"
+            className="btn btn-ghost w-full max-w-xs"
+            disabled={printing}
+            onClick={() => void printReceipt()}
+          >
+            {printing ? 'Printing...' : 'Print receipt'}
+          </button>
         )}
       </div>
 
