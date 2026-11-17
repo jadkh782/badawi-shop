@@ -27,7 +27,11 @@ win:
     # desktop icon that survive a restart, not a file somebody has to go and find.
     - target: nsis
       arch: [x64]
-  artifactName: BadawiShop-Setup-${version}.${ext}
+  # No version in the name, deliberately. The Settings page links to
+  # /releases/latest/download/BadawiShop-Setup.exe, and that address only keeps working if
+  # the file is called the same thing in every release. The version lives in the release
+  # itself, which is where someone looking for it would go anyway.
+  artifactName: BadawiShop-Setup.${ext}
 
 nsis:
   oneClick: false
@@ -38,4 +42,9 @@ nsis:
   shortcutName: Badawi Shop
 
 # Nothing is fetched or published on build; the installer is a file to copy to the till.
+# Squeezed harder than the default. This is a download over a shop's connection, and the
+# difference is tens of megabytes for a few more seconds of packing.
+compression: maximum
+
+# Nothing is fetched or published on build; the installer is a file to upload to a release.
 publish: null

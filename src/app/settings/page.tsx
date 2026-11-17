@@ -27,6 +27,17 @@ import { ResetSheet } from '@/presentation/components/ResetSheet';
 
 const SAMPLE = Money.fromDollars(1);
 
+/**
+ * Always the newest published installer.
+ *
+ * Pinned to "latest" rather than a version, and the installer is named the same thing in
+ * every release, so this address never has to be edited again. The file itself is far too
+ * large to live in the repository, which is why it is a release asset rather than something
+ * served from the site.
+ */
+const TILL_APP_DOWNLOAD =
+  'https://github.com/jadkh782/badawi-shop/releases/latest/download/BadawiShop-Setup.exe';
+
 export default function SettingsPage() {
   const { settings, rate, refresh } = useSettings();
   const { user, lock } = useSession();
@@ -41,6 +52,7 @@ export default function SettingsPage() {
   // Only ever populated inside the till app; a browser has no way to list printers.
   const [printers, setPrinters] = useState<KnownPrinter[]>([]);
   const [device, setDevice] = useState<string | null>(null);
+  const [inTillApp, setInTillApp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -65,6 +77,9 @@ export default function SettingsPage() {
   // Which printers this machine has is a question only the till app can answer, and the
   // answer is remembered on the machine, so it is read the same way the lock flags are.
   useEffect(() => {
+    // Read after mount, never during render: the static build has no window, and deciding
+    // this while rendering would make the server and the browser disagree.
+    setInTillApp(DesktopReceiptPrinter.isAvailable());
     if (!DesktopReceiptPrinter.isAvailable()) return;
     setDevice(DesktopReceiptPrinter.chosenPrinter());
     void DesktopReceiptPrinter.listPrinters().then(setPrinters);
@@ -307,6 +322,40 @@ export default function SettingsPage() {
               </div>
             </section>
           )}
+
+          {/* The download is pointless inside the app it installs, so the till is told it
+              already has it instead of being offered it again. */}
+          <section className="card p-4">
+            <p className="eyebrow">Till app</p>
+            {inTillApp ? (
+              <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
+                This is the till app. Receipts print straight to the printer without a dialog.
+                It loads the live shop, so it updates itself whenever the shop does &mdash;
+                there is nothing to reinstall.
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
+                  For the counter computer. Same shop, same data, but receipts print with no
+                  dialog in the way and you can choose which printer they go to. This page
+                  works as it always has in a browser; the app only adds the printing.
+                </p>
+
+                <a
+                  href={TILL_APP_DOWNLOAD}
+                  className="btn btn-ghost mt-3 w-full"
+                  rel="noreferrer"
+                >
+                  Download for Windows
+                </a>
+
+                <p className="mt-2 text-xs leading-relaxed text-[var(--color-faint)]">
+                  About 164&nbsp;MB. Windows will say the publisher is unknown, because the
+                  installer is not signed: choose <b>More info</b>, then <b>Run anyway</b>.
+                </p>
+              </>
+            )}
+          </section>
 
           {/* Where the shop decides what "what did this cost" means. Both answers are
               honest; which one is right depends on how the shop actually thinks about its
