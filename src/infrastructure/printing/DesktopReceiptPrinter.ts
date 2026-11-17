@@ -2,7 +2,12 @@ import type { IReceiptPrinter, PrintJob, PrintOutcome } from '@/application/port
 
 /** What the till app puts on the window, and all it puts there. */
 interface DesktopBridge {
-  print(job: { html: string; title: string; deviceName?: string }): Promise<string>;
+  print(job: {
+    html: string;
+    title: string;
+    deviceName?: string;
+    chooseDestination?: boolean;
+  }): Promise<string>;
   listPrinters(): Promise<Array<{ name: string; description: string; isDefault: boolean }>>;
 }
 
@@ -78,7 +83,9 @@ export class DesktopReceiptPrinter implements IReceiptPrinter {
       const outcome = await api.print({
         html: job.html,
         title: job.title,
-        ...(chosen ? { deviceName: chosen } : {}),
+        // A sheet goes wherever the shop says; only receipts assume the till printer.
+        ...(job.chooseDestination ? {} : chosen ? { deviceName: chosen } : {}),
+        ...(job.chooseDestination ? { chooseDestination: true } : {}),
       });
       return outcome === 'printed' || outcome === 'cancelled' ? outcome : 'unavailable';
     } catch {

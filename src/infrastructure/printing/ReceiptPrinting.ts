@@ -1,6 +1,7 @@
 import { DiscountFactory, type Product, type Sale, type ShopSettings } from '@/domain';
 import type { IReceiptPrinter, PrintOutcome } from '@/application/ports';
 import { ReceiptDocument } from './ReceiptDocument';
+import { ScanSheetDocument } from './ScanSheetDocument';
 import type { ReceiptLine, ReceiptPayload } from './receiptTypes';
 
 export interface ReceiptOptions {
@@ -72,6 +73,42 @@ export class ReceiptPrinting {
           ? `Label ${products[0]?.name ?? ''}`
           : `${products.length} labels`,
       html,
+    });
+  }
+
+  /**
+   * Every barcode on A4, grouped by shelf, to scan from rather than stick on.
+   *
+   * Sticking a label on each of several hundred articles is an afternoon that starts coming
+   * unstuck the same week, and loose goods have nothing to stick one to. A sheet behind the
+   * counter solves both.
+   *
+   * It asks where to print rather than assuming the till printer, whose roll is 80mm wide
+   * and would turn an A4 page into a long ribbon of fragments.
+   */
+  async scanSheet(
+    products: readonly Product[],
+    settings: ShopSettings,
+  ): Promise<PrintOutcome> {
+    const items = products
+      .filter((product) => product.barcode !== null)
+      .map((product) => ({
+        name: product.name,
+        barcode: product.barcode?.value ?? '',
+        price_cents: product.salePrice.cents,
+        category: product.categoryName ?? 'Uncategorised',
+      }));
+
+    if (items.length === 0) return 'unavailable';
+
+    return this.printer.print({
+      title: `Scan sheet (${items.length})`,
+      html: ScanSheetDocument.build({
+        shop_name: settings.shopName,
+        printed_at: new Date().toISOString(),
+        items,
+      }),
+      chooseDestination: true,
     });
   }
 

@@ -35,6 +35,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [sheeting, setSheeting] = useState(false);
   const [coding, setCoding] = useState(false);
   const [confirmCodes, setConfirmCodes] = useState(false);
   // Bumped to pull the list again after something changes it server-side. The codes are
@@ -121,6 +122,21 @@ export default function InventoryPage() {
     }
   }
 
+  /** Everything on screen that can be scanned, which is what belongs on a sheet. */
+  const scannable = products.filter((product) => product.barcode !== null);
+
+  async function printSheet() {
+    setSheeting(true);
+    try {
+      const outcome = await container().receipts.scanSheet(scannable, settings);
+      if (outcome === 'unavailable') notify('No printer could be reached', 'error');
+    } catch (error) {
+      notify(messageFor(error), 'error');
+    } finally {
+      setSheeting(false);
+    }
+  }
+
   async function printLabels() {
     setPrinting(true);
     try {
@@ -181,7 +197,7 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {(needCodes.length > 0 || needLabels.length > 0) && (
+        {(needCodes.length > 0 || needLabels.length > 0 || scannable.length > 0) && (
           <div className="flex flex-col gap-2 px-4 pt-3">
             {/* Two taps, because this writes a code onto every article on screen and the
                 first tap is the one that says how many that is. */}
@@ -216,6 +232,21 @@ export default function InventoryPage() {
                   } a barcode`}
                 </button>
               ))}
+
+            {/* The sheet first: for most shops it is the whole answer, and sticking a
+                label on every article is the laborious alternative to it. */}
+            {scannable.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-ghost w-full"
+                disabled={sheeting}
+                onClick={() => void printSheet()}
+              >
+                {sheeting
+                  ? 'Building the sheet...'
+                  : `Print a scan sheet of ${scannable.length}`}
+              </button>
+            )}
 
             {needLabels.length > 0 && (
               <button

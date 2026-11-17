@@ -128,7 +128,9 @@ ipcMain.handle('badawi:print', async (_event, job) => {
     return await new Promise((resolve) => {
       worker.webContents.print(
         {
-          silent: true,
+          // A receipt goes straight to the till printer. Anything else asks, because the
+          // roll in that printer is 80mm wide and an A4 sheet sent to it is wasted paper.
+          silent: !job.chooseDestination,
           printBackground: true,
           // The paper size comes from the printer's own driver settings, which is where the
           // 80mm roll is already configured. Forcing a height here would either clip a long
