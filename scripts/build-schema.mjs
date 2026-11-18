@@ -8,7 +8,7 @@
  *
  *     node scripts/build-schema.mjs
  */
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,5 +37,31 @@ for (const file of files) {
   parts.push(`\n${RULE}\n-- ${file}\n${RULE}\n${sql.trimEnd()}\n`);
 }
 
-await writeFile(OUT, parts.join(''), 'utf8');
-console.log(`schema.sql rebuilt from ${files.length} migrations.`);
+const schema = parts.join('');
+
+/*
+  Checked before it is written, and written somewhere else first.
+
+  This file shipped empty once. Something interrupted the write, the truncated file was
+  committed, and for two commits the shop was told to paste nothing into its database. Both
+  halves of that are fixed here: nothing is written unless it looks like a schema, and the
+  real file is only replaced once a complete one exists beside it, so an interrupted run
+  leaves the previous schema intact rather than a zero-byte file.
+*/
+if (files.length === 0) {
+  throw new Error('No migrations found. Refusing to write an empty schema.sql.');
+}
+if (!schema.includes('create table') || schema.length < 10_000) {
+  throw new Error(
+    `Generated schema looks wrong: ${schema.length} bytes, ${files.length} migrations. ` +
+      'Refusing to overwrite schema.sql.',
+  );
+}
+
+const temporary = `${OUT}.building`;
+await writeFile(temporary, schema, 'utf8');
+await rename(temporary, OUT);
+
+console.log(
+  `schema.sql rebuilt from ${files.length} migrations (${Math.round(schema.length / 1024)} KB).`,
+);

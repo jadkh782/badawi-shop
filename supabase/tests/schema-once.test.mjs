@@ -5,7 +5,7 @@
  */
 import { PGlite } from '@electric-sql/pglite';
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -27,6 +27,31 @@ await db.exec(`
 `);
 
 const schema = await readFile(path.join(HERE, '..', 'schema.sql'), 'utf8');
+
+/*
+  The file on disk has to be the migrations, not merely something.
+
+  schema.sql once shipped as zero bytes: a write was interrupted, the truncated file was
+  committed and pushed, and the shop was told to paste it. Nothing failed, because an empty
+  script applies perfectly well — it just does nothing. This checks the artefact itself
+  before any of it is run, so the next truncation is a red test rather than a database that
+  silently lacks every table.
+*/
+const migrationFiles = (await readdir(path.join(HERE, '..', 'migrations')))
+  .filter((f) => f.endsWith('.sql'))
+  .sort();
+
+if (schema.length < 10_000) {
+  console.error(`  FAIL schema.sql is only ${schema.length} bytes. Run scripts/build-schema.mjs.`);
+  process.exit(1);
+}
+for (const file of migrationFiles) {
+  if (!schema.includes(file)) {
+    console.error(`  FAIL schema.sql is missing ${file}. Run scripts/build-schema.mjs.`);
+    process.exit(1);
+  }
+}
+console.log(`  ok   schema.sql carries all ${migrationFiles.length} migrations`);
 
 for (const pass of [1, 2]) {
   try {
