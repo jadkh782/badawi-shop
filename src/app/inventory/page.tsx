@@ -36,6 +36,7 @@ export default function InventoryPage() {
   const [scanning, setScanning] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [sheeting, setSheeting] = useState(false);
+  const [labelChoice, setLabelChoice] = useState(false);
   const [coding, setCoding] = useState(false);
   const [confirmCodes, setConfirmCodes] = useState(false);
   // Bumped to pull the list again after something changes it server-side. The codes are
@@ -137,10 +138,27 @@ export default function InventoryPage() {
     }
   }
 
-  async function printLabels() {
+  /*
+    One label each, or one per unit on the shelf. Both are real needs — a new shelf wants a
+    label per article, a restocked one wants a label per jar — and they differ by orders of
+    magnitude, so the shop is shown the total before either happens.
+  */
+  const perUnitTotal = needLabels.reduce(
+    (total, product) => total + Math.max(1, Math.floor(product.stock.value)),
+    0,
+  );
+
+  async function printLabels(matchStock: boolean) {
+    setLabelChoice(false);
     setPrinting(true);
     try {
-      const outcome = await container().receipts.labels(needLabels, settings);
+      const outcome = await container().receipts.labels(
+        needLabels.map((product) => ({
+          product,
+          copies: matchStock ? Math.max(1, Math.floor(product.stock.value)) : 1,
+        })),
+        settings,
+      );
       if (outcome === 'unavailable') notify('No printer could be reached', 'error');
     } catch (error) {
       notify(messageFor(error), 'error');
@@ -248,18 +266,51 @@ export default function InventoryPage() {
               </button>
             )}
 
-            {needLabels.length > 0 && (
-              <button
-                type="button"
-                className="btn btn-ghost w-full"
-                disabled={printing}
-                onClick={() => void printLabels()}
-              >
-                {printing
-                  ? 'Printing...'
-                  : `Print ${needLabels.length} label${needLabels.length === 1 ? '' : 's'}`}
-              </button>
-            )}
+            {needLabels.length > 0 &&
+              (labelChoice ? (
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-ghost w-full"
+                    disabled={printing}
+                    onClick={() => void printLabels(false)}
+                  >
+                    {`One each · ${needLabels.length} label${
+                      needLabels.length === 1 ? '' : 's'
+                    }`}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost w-full"
+                    disabled={printing}
+                    onClick={() => void printLabels(true)}
+                  >
+                    {`One per unit on the shelf · ${perUnitTotal} label${
+                      perUnitTotal === 1 ? '' : 's'
+                    }`}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost w-full"
+                    onClick={() => setLabelChoice(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-ghost w-full"
+                  disabled={printing}
+                  onClick={() => setLabelChoice(true)}
+                >
+                  {printing
+                    ? 'Printing...'
+                    : `Print labels for ${needLabels.length} article${
+                        needLabels.length === 1 ? '' : 's'
+                      }`}
+                </button>
+              ))}
           </div>
         )}
 

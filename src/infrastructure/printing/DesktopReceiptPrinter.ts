@@ -17,7 +17,12 @@ function bridge(): DesktopBridge | null {
 }
 
 /** Which printer this particular till should use. A fact about the counter, not the shop. */
-const DEVICE_KEY = 'badawi.printer.device';
+const DEVICE_KEYS = {
+  receipt: 'badawi.printer.device',
+  label: 'badawi.printer.label',
+} as const;
+
+export type PrinterRole = keyof typeof DEVICE_KEYS;
 
 export interface KnownPrinter {
   name: string;
@@ -54,10 +59,10 @@ export class DesktopReceiptPrinter implements IReceiptPrinter {
     }
   }
 
-  static chosenPrinter(): string | null {
+  static chosenPrinter(role: PrinterRole = 'receipt'): string | null {
     if (typeof window === 'undefined') return null;
     try {
-      return localStorage.getItem(DEVICE_KEY);
+      return localStorage.getItem(DEVICE_KEYS[role]);
     } catch {
       // Private browsing and blocked site data both throw here. Falling back to the system
       // default beats refusing to print.
@@ -65,10 +70,10 @@ export class DesktopReceiptPrinter implements IReceiptPrinter {
     }
   }
 
-  static choosePrinter(name: string | null): void {
+  static choosePrinter(name: string | null, role: PrinterRole = 'receipt'): void {
     try {
-      if (name) localStorage.setItem(DEVICE_KEY, name);
-      else localStorage.removeItem(DEVICE_KEY);
+      if (name) localStorage.setItem(DEVICE_KEYS[role], name);
+      else localStorage.removeItem(DEVICE_KEYS[role]);
     } catch {
       // Nothing to do; the next print falls back to the system default.
     }
@@ -78,14 +83,17 @@ export class DesktopReceiptPrinter implements IReceiptPrinter {
     const api = bridge();
     if (!api) return 'unavailable';
 
-    const chosen = DesktopReceiptPrinter.chosenPrinter();
+    const destination = job.destination ?? 'receipt';
+    // Asking means the shop picks in the dialog, so no printer is named at all.
+    const chosen =
+      destination === 'ask' ? null : DesktopReceiptPrinter.chosenPrinter(destination);
+
     try {
       const outcome = await api.print({
         html: job.html,
         title: job.title,
-        // A sheet goes wherever the shop says; only receipts assume the till printer.
-        ...(job.chooseDestination ? {} : chosen ? { deviceName: chosen } : {}),
-        ...(job.chooseDestination ? { chooseDestination: true } : {}),
+        ...(chosen ? { deviceName: chosen } : {}),
+        ...(destination === 'ask' ? { chooseDestination: true } : {}),
       });
       return outcome === 'printed' || outcome === 'cancelled' ? outcome : 'unavailable';
     } catch {

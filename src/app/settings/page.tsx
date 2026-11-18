@@ -52,6 +52,7 @@ export default function SettingsPage() {
   // Only ever populated inside the till app; a browser has no way to list printers.
   const [printers, setPrinters] = useState<KnownPrinter[]>([]);
   const [device, setDevice] = useState<string | null>(null);
+  const [labelDevice, setLabelDevice] = useState<string | null>(null);
   const [inTillApp, setInTillApp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
@@ -81,7 +82,8 @@ export default function SettingsPage() {
     // this while rendering would make the server and the browser disagree.
     setInTillApp(DesktopReceiptPrinter.isAvailable());
     if (!DesktopReceiptPrinter.isAvailable()) return;
-    setDevice(DesktopReceiptPrinter.chosenPrinter());
+    setDevice(DesktopReceiptPrinter.chosenPrinter('receipt'));
+    setLabelDevice(DesktopReceiptPrinter.chosenPrinter('label'));
     void DesktopReceiptPrinter.listPrinters().then(setPrinters);
   }, []);
 
@@ -229,6 +231,45 @@ export default function SettingsPage() {
             </button>
           </section>
 
+          {/* A second machine with a second roll. Labels sent to the till printer would come
+              out down a receipt, so this is a separate choice rather than a shared one. */}
+          {printers.length > 0 && (
+            <section className="card p-4">
+              <p className="eyebrow">Label printer</p>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--color-muted)]">
+                Where shelf labels go. A different machine from the receipt printer, with
+                50&nbsp;&times;&nbsp;30&nbsp;mm label stock. Set the same size in its Windows
+                driver, or the print walks off the label a fraction at a time.
+              </p>
+
+              <div className="mt-3 flex flex-col gap-2">
+                <PrinterChoice
+                  label="Whatever Windows uses"
+                  detail="The system default printer"
+                  selected={labelDevice === null}
+                  onSelect={() => {
+                    DesktopReceiptPrinter.choosePrinter(null, 'label');
+                    setLabelDevice(null);
+                    notify('Labels will use the system default printer');
+                  }}
+                />
+                {printers.map((printer) => (
+                  <PrinterChoice
+                    key={printer.name}
+                    label={printer.name}
+                    detail={printer.isDefault ? 'Windows default' : printer.description}
+                    selected={labelDevice === printer.name}
+                    onSelect={() => {
+                      DesktopReceiptPrinter.choosePrinter(printer.name, 'label');
+                      setLabelDevice(printer.name);
+                      notify(`Labels will print to ${printer.name}`, 'success');
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Printed, not shown. Everything here exists only on paper, which is why it sits
               apart from the shop name rather than beside it. */}
           <section className="card p-4">
@@ -301,7 +342,7 @@ export default function SettingsPage() {
                   detail="The system default printer"
                   selected={device === null}
                   onSelect={() => {
-                    DesktopReceiptPrinter.choosePrinter(null);
+                    DesktopReceiptPrinter.choosePrinter(null, 'receipt');
                     setDevice(null);
                     notify('Using the system default printer');
                   }}
@@ -313,7 +354,7 @@ export default function SettingsPage() {
                     detail={printer.isDefault ? 'Windows default' : printer.description}
                     selected={device === printer.name}
                     onSelect={() => {
-                      DesktopReceiptPrinter.choosePrinter(printer.name);
+                      DesktopReceiptPrinter.choosePrinter(printer.name, 'receipt');
                       setDevice(printer.name);
                       notify(`Receipts will print to ${printer.name}`, 'success');
                     }}

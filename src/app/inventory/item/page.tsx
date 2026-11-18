@@ -10,6 +10,7 @@ import { useToast } from '@/presentation/providers/ToastProvider';
 import { AppShell } from '@/presentation/components/AppShell';
 import { ProductForm, formFrom } from '@/presentation/components/ProductForm';
 import { RestockSheet } from '@/presentation/components/RestockSheet';
+import { Sheet } from '@/presentation/components/Sheet';
 import { PriceHistory } from '@/presentation/components/PriceHistory';
 import { useSettings } from '@/presentation/providers/SettingsProvider';
 
@@ -36,6 +37,7 @@ function EditProduct() {
   const [busy, setBusy] = useState(false);
   const [restocking, setRestocking] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [copies, setCopies] = useState<number | null>(null);
   const [notFound, setNotFound] = useState(false);
   // Bumped after a delivery so the price trail below picks up the row it just wrote.
   const [reloadKey, setReloadKey] = useState(0);
@@ -74,12 +76,18 @@ function EditProduct() {
     }
   }
 
-  async function printLabel() {
+  async function printLabel(howMany: number) {
     if (!product) return;
+    setCopies(null);
     setPrinting(true);
     try {
-      const outcome = await container().receipts.label(product, settings);
-      if (outcome === 'unavailable') notify('No printer could be reached', 'error');
+      const outcome = await container().receipts.label(product, settings, howMany);
+      if (outcome === 'unavailable') {
+        notify(
+          product.barcode ? 'No printer could be reached' : 'This article has no barcode yet',
+          'error',
+        );
+      }
     } catch (error) {
       notify(messageFor(error), 'error');
     } finally {
@@ -162,7 +170,7 @@ function EditProduct() {
                 type="button"
                 className="btn btn-ghost"
                 disabled={printing}
-                onClick={() => void printLabel()}
+                onClick={() => setCopies(Math.max(1, Math.floor(product.stock.value)))}
               >
                 {printing ? '...' : 'Label'}
               </button>
@@ -211,6 +219,79 @@ function EditProduct() {
           </p>
         </div>
       </AppShell>
+
+      {copies !== null && product && (
+        <Sheet open onClose={() => setCopies(null)} title={`Labels for ${product.name}`}>
+          <p className="rounded-xl bg-[var(--color-ink)] px-3 py-3 text-xs leading-relaxed text-[var(--color-muted)]">
+            {product.barcode
+              ? 'Each label carries the name, the price and the barcode. They go to the label printer, not the till printer.'
+              : 'This article has no barcode yet, so a label would have nothing to scan. Generate one first.'}
+          </p>
+
+          <p className="eyebrow mt-4">How many</p>
+          <div className="mt-2 flex items-center justify-center gap-4">
+            <button
+              type="button"
+              aria-label="One fewer"
+              onClick={() => setCopies(Math.max(1, copies - 1))}
+              disabled={copies <= 1}
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-[var(--color-line)] text-2xl font-bold text-[var(--color-muted)] disabled:opacity-30"
+            >
+              &minus;
+            </button>
+            <input
+              value={copies}
+              onChange={(event) => {
+                const typed = Number(event.target.value.replace(/[^0-9]/g, ''));
+                setCopies(Number.isFinite(typed) && typed > 0 ? Math.min(typed, 500) : 1);
+              }}
+              inputMode="numeric"
+              aria-label="How many labels"
+              className="field tnum w-24 text-center text-3xl font-bold"
+            />
+            <button
+              type="button"
+              aria-label="One more"
+              onClick={() => setCopies(Math.min(500, copies + 1))}
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-[var(--color-line)] text-2xl font-bold text-[var(--color-muted)]"
+            >
+              +
+            </button>
+          </div>
+
+          {/* The shelf count is the usual answer, so it is one tap rather than typing. */}
+          <div className="strip -mx-4 mt-4 px-4 pb-1">
+            {[1, 5, 10, Math.max(1, Math.floor(product.stock.value))]
+              .filter((n, i, all) => all.indexOf(n) === i)
+              .map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className="chip"
+                  data-active={copies === n}
+                  onClick={() => setCopies(n)}
+                >
+                  {n === Math.max(1, Math.floor(product.stock.value)) && n !== 1
+                    ? `${n} on the shelf`
+                    : n}
+                </button>
+              ))}
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-stock mb-2 mt-5 w-full"
+            disabled={printing || !product.barcode}
+            onClick={() => void printLabel(copies)}
+          >
+            {!product.barcode
+              ? 'No barcode to print'
+              : printing
+                ? 'Printing...'
+                : `Print ${copies} label${copies === 1 ? '' : 's'}`}
+          </button>
+        </Sheet>
+      )}
 
       <RestockSheet
         open={restocking}

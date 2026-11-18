@@ -8,13 +8,17 @@ export interface PrintJob {
   /** A complete HTML document. */
   html: string;
   /**
-   * Ask where it should go rather than sending it straight to the till printer.
+   * Which machine this belongs on.
    *
-   * True for anything that is not a receipt. The till printer holds an 80mm roll, and an A4
-   * scan sheet silently fed to it comes out as a hundred feet of sliced-up paper. In a
-   * browser this changes nothing, since a dialog is the only route there anyway.
+   *   receipt  the till printer, silently. The default.
+   *   label    the label printer, silently. A different roll and a different page size, so
+   *            sending these to the till printer would print them down a receipt.
+   *   ask      show the dialog. For the A4 scan sheet, which belongs on an office printer
+   *            and would come out of either thermal printer as a ribbon of fragments.
+   *
+   * A browser only ever shows the dialog, so this changes nothing there.
    */
-  chooseDestination?: boolean;
+  destination?: 'receipt' | 'label' | 'ask';
 }
 
 /**

@@ -2,6 +2,7 @@ import { DiscountFactory, type Product, type Sale, type ShopSettings } from '@/d
 import type { IReceiptPrinter, PrintOutcome } from '@/application/ports';
 import { ReceiptDocument } from './ReceiptDocument';
 import { ScanSheetDocument } from './ScanSheetDocument';
+import { LabelDocument, type LabelItem } from './LabelDocument';
 import type { ReceiptLine, ReceiptPayload } from './receiptTypes';
 
 export interface ReceiptOptions {
@@ -41,39 +42,47 @@ export class ReceiptPrinting {
     });
   }
 
-  /** A shelf ticket, which is how a generated barcode gets somewhere a scanner can reach. */
-  async label(product: Product, settings: ShopSettings): Promise<PrintOutcome> {
-    return this.labels([product], settings);
+  /**
+   * Shelf labels, on the label printer.
+   *
+   * Each article can ask for more than one, because a shelf holding six of something wants
+   * six labels, and the alternative is tapping print six times. The count comes from the
+   * caller rather than from the stock level here: the shop sometimes wants one to check the
+   * alignment, and sometimes one per unit on the shelf.
+   *
+   * Articles with no barcode are dropped. A label with a name and a price but nothing to
+   * scan does not do the job the label exists for.
+   */
+  async labels(
+    items: ReadonlyArray<{ product: Product; copies: number }>,
+    _settings: ShopSettings,
+  ): Promise<PrintOutcome> {
+    const printable: LabelItem[] = items
+      .filter((item) => item.product.barcode !== null)
+      .map((item) => ({
+        name: item.product.name,
+        barcode: item.product.barcode?.value ?? null,
+        price_cents: item.product.salePrice.cents,
+        copies: Math.max(1, Math.floor(item.copies)),
+      }));
+
+    if (printable.length === 0) return 'unavailable';
+
+    const total = LabelDocument.count(printable);
+    return this.printer.print({
+      title: total === 1 ? 'Label' : `${total} labels`,
+      html: LabelDocument.build(printable),
+      destination: 'label',
+    });
   }
 
-  /**
-   * A ticket for each of these, in one job.
-   *
-   * Thirty articles needing a ticket after a stocktake is thirty trips to the shelf if they
-   * are printed one at a time, and thirty jobs in the queue for one of them to go missing in.
-   */
-  async labels(products: readonly Product[], settings: ShopSettings): Promise<PrintOutcome> {
-    if (products.length === 0) return 'unavailable';
-
-    const html = ReceiptDocument.labels(
-      products.map((product) => ({
-        shop_name: settings.shopName,
-        product_name: product.name,
-        barcode: product.barcode?.value ?? null,
-        price_cents: product.salePrice.cents,
-        // A label is printed today for a shelf read today, so today's rate is the right one
-        // here — unlike a receipt, which has to reproduce a past moment.
-        price_lbp: settings.exchangeRate.toLbp(product.salePrice),
-      })),
-    );
-
-    return this.printer.print({
-      title:
-        products.length === 1
-          ? `Label ${products[0]?.name ?? ''}`
-          : `${products.length} labels`,
-      html,
-    });
+  /** One article, however many copies. */
+  async label(
+    product: Product,
+    settings: ShopSettings,
+    copies = 1,
+  ): Promise<PrintOutcome> {
+    return this.labels([{ product, copies }], settings);
   }
 
   /**
@@ -108,7 +117,7 @@ export class ReceiptPrinting {
         printed_at: new Date().toISOString(),
         items,
       }),
-      chooseDestination: true,
+      destination: 'ask',
     });
   }
 
