@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Money, type CostMethod } from '@/domain';
 import { container } from '@/container';
 import { messageFor } from '@/infrastructure/supabase/errors';
@@ -77,6 +77,16 @@ export default function SettingsPage() {
 
   // Which printers this machine has is a question only the till app can answer, and the
   // answer is remembered on the machine, so it is read the same way the lock flags are.
+  /*
+    Asked for again on demand, because a printer is often installed while this page is open:
+    the shop plugs one in, runs the driver, comes back and wonders why it is not listed. The
+    list is read once on mount and otherwise only when asked.
+  */
+  const refreshPrinters = useCallback(async () => {
+    if (!DesktopReceiptPrinter.isAvailable()) return;
+    setPrinters(await DesktopReceiptPrinter.listPrinters());
+  }, []);
+
   useEffect(() => {
     // Read after mount, never during render: the static build has no window, and deciding
     // this while rendering would make the server and the browser disagree.
@@ -84,8 +94,8 @@ export default function SettingsPage() {
     if (!DesktopReceiptPrinter.isAvailable()) return;
     setDevice(DesktopReceiptPrinter.chosenPrinter('receipt'));
     setLabelDevice(DesktopReceiptPrinter.chosenPrinter('label'));
-    void DesktopReceiptPrinter.listPrinters().then(setPrinters);
-  }, []);
+    void refreshPrinters();
+  }, [refreshPrinters]);
 
   const preview = (() => {
     const parsed = Number(rateInput.replace(/[,\s]/g, ''));
@@ -267,6 +277,15 @@ export default function SettingsPage() {
                   />
                 ))}
               </div>
+              <button
+                type="button"
+                className="btn btn-ghost mt-3 w-full"
+                onClick={() => {
+                  void refreshPrinters().then(() => notify('Printer list reread'));
+                }}
+              >
+                Look for printers again
+              </button>
             </section>
           )}
 
@@ -361,6 +380,16 @@ export default function SettingsPage() {
                   />
                 ))}
               </div>
+
+              <button
+                type="button"
+                className="btn btn-ghost mt-3 w-full"
+                onClick={() => {
+                  void refreshPrinters().then(() => notify('Printer list reread'));
+                }}
+              >
+                Look for printers again
+              </button>
             </section>
           )}
 
