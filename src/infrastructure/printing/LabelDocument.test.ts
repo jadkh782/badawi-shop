@@ -37,6 +37,24 @@ describe('a shelf label', () => {
   });
 });
 
+describe('fitting the page without spilling over it', () => {
+  it('leaves the label box a hair under the page', () => {
+    /*
+      The bug this exists for. The box was exactly 50x30 on a 50x30 page, and a driver whose
+      printable area rounded down by a fraction pushed the content onto a second page: one
+      blank label out of the printer, one printed.
+    */
+    const html = LabelDocument.build([item()]);
+    expect(html).toContain('size: 50mm 30mm');
+    expect(html).toContain(`height: ${LABEL_HEIGHT_MM - 0.6}mm`);
+    expect(html).not.toContain(`height: ${LABEL_HEIGHT_MM}mm;`);
+  });
+
+  it('clips anything that would still reach past the page', () => {
+    expect(LabelDocument.build([item()])).toContain('overflow: hidden');
+  });
+});
+
 describe('how many come out', () => {
   it('prints one page per copy, so the printer advances one label each', () => {
     const html = LabelDocument.build([item({ copies: 3 })]);

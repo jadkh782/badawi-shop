@@ -98,16 +98,23 @@ function wrap(body: string): string {
   */
   @page { size: ${LABEL_WIDTH_MM}mm ${LABEL_HEIGHT_MM}mm; margin: 0; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; overflow: hidden; }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
+  /*
+    A hair under the page, never exactly it.
+
+    The page is 50x30 and so was this, and a driver whose printable area rounds down by a
+    fraction of a millimetre then pushed the content onto a second page: one blank label, one
+    printed. Half a millimetre of slack costs nothing visible and cannot overflow.
+  */
   .label {
-    width: ${LABEL_WIDTH_MM}mm;
-    height: ${LABEL_HEIGHT_MM}mm;
+    width: 100%;
+    height: ${LABEL_HEIGHT_MM - 0.6}mm;
     padding: 1.2mm 1.5mm;
     display: flex;
     flex-direction: column;
