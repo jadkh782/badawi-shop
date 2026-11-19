@@ -2,7 +2,7 @@ import { DiscountFactory, type Product, type Sale, type ShopSettings } from '@/d
 import type { IReceiptPrinter, PrintOutcome } from '@/application/ports';
 import { ReceiptDocument } from './ReceiptDocument';
 import { ScanSheetDocument } from './ScanSheetDocument';
-import { LabelDocument, type LabelItem } from './LabelDocument';
+import { LABEL_WIDTH_MM, LabelDocument, type LabelItem } from './LabelDocument';
 import type { ReceiptLine, ReceiptPayload } from './receiptTypes';
 
 export interface ReceiptOptions {
@@ -39,6 +39,7 @@ export class ReceiptPrinting {
     return this.printer.print({
       title: `Receipt ${sale.id.slice(0, 8)}`,
       html: ReceiptDocument.receipt(payload),
+      layoutWidthMm: 72,
     });
   }
 
@@ -75,6 +76,7 @@ export class ReceiptPrinting {
       // No page size: the label printer's driver holds the stock, the orientation and the
       // margins for the roll actually loaded, and anything sent from here would override it.
       destination: 'label',
+      layoutWidthMm: LABEL_WIDTH_MM,
     });
   }
 
@@ -120,6 +122,7 @@ export class ReceiptPrinting {
         items,
       }),
       destination: 'ask',
+      layoutWidthMm: 210,
     });
   }
 

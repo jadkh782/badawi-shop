@@ -28,9 +28,14 @@ export class BrowserReceiptPrinter implements IReceiptPrinter {
     /*
       Off to the side at a real size rather than display:none or zero-by-zero. A frame with
       no box does not lay out in every browser, and an unlaid-out frame prints blank paper.
+
+      Note what is NOT here: opacity. A transparent frame prints transparent — Chromium
+      carries the host element's opacity into the printed output and the paper comes out
+      blank. Moving it off the side hides it just as well and leaves the rendering alone.
     */
+    const widthMm = job.layoutWidthMm ?? 80;
     frame.style.cssText =
-      'position:fixed;left:-10000px;top:0;width:80mm;height:600px;border:0;opacity:0;';
+      `position:fixed;left:-10000px;top:0;width:${widthMm}mm;height:600px;border:0;`;
 
     document.body.appendChild(frame);
 

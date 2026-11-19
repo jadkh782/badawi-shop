@@ -19,6 +19,15 @@ export interface PrintJob {
    * A browser only ever shows the dialog, so this changes nothing there.
    */
   destination?: 'receipt' | 'label' | 'ask';
+  /**
+   * How wide to lay the document out, in millimetres, when printing through a browser.
+   *
+   * Not a page size and never sent to a printer: it is the width of the hidden frame the
+   * document is rendered in. Laid out at the wrong width the content is squeezed or clipped
+   * when it reaches the paper — a 50mm label composed in an 80mm frame arrives shrunk.
+   * The till app ignores this and leaves everything to the driver.
+   */
+  layoutWidthMm?: number;
 }
 
 /**
