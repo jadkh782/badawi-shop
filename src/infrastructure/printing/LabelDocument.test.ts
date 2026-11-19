@@ -10,7 +10,7 @@ const item = (over: Partial<LabelItem> = {}): LabelItem => ({
 });
 
 describe('a shelf label', () => {
-  it('leaves the page to the printer driver', () => {
+  it('states the page in millimetres, so nothing has to guess it', () => {
     /*
       The driver holds the stock, the orientation and the margins for the roll physically
       loaded. Declaring a size here fought all of it: the app said 50 by 30, the driver said
@@ -18,8 +18,8 @@ describe('a shelf label', () => {
       means whatever is set in Printing Preferences is simply what happens.
     */
     const html = LabelDocument.build([item()]);
-    expect(html).toContain('@page { margin: 0; }');
-    expect(html).not.toMatch(/@page[^}]*size:/);
+    expect(html).toContain('size: 50mm 30mm');
+    expect(html).toContain('width: 50mm');
   });
 
   it('still knows the stock it was designed around', () => {
@@ -49,12 +49,12 @@ describe('a shelf label', () => {
 });
 
 describe('fitting whatever page it is given', () => {
-  it('fixes no height, so it cannot land half on the next label', () => {
-    // A fixed height against a page of unknown size is exactly how content ends up split
-    // across two labels, which is what the shop saw.
+  it('caps its height instead of pinning it, so it cannot split across two labels', () => {
+    // Pinning the box to the full page height is what put content half on one label and
+    // half on the next; capping it lets a short label stay short.
     const html = LabelDocument.build([item()]);
-    expect(html).not.toMatch(/\.label\s*\{[^}]*height:/);
-    expect(html).toContain('width: 100%');
+    expect(html).toContain('max-height: 30mm');
+    expect(html).not.toMatch(/\.label\s*\{[^}]*[^-]height:\s*30mm/);
   });
 
   it('keeps clear of the edges the driver reserves', () => {

@@ -93,15 +93,18 @@ function wrap(body: string): string {
 <title>Labels</title>
 <style>
   /*
-    No page size here, deliberately.
+    Stated in millimetres, both the page and the box on it.
 
-    The driver knows the label: its stock setting, its orientation and its margins are all
-    configured against the roll that is physically loaded. Declaring a size here fought all
-    of that — the app said 50 by 30 and the driver said something else, and the content was
-    rotated or clipped to reconcile them. Whatever is set in Printing Preferences now simply
-    happens, which also means a different roll needs no change in here.
+    This was tried the other way round — no page size, width in per cent, the driver left to
+    decide — on the reasoning that the driver knows the roll. It does, but a document that
+    declares nothing has to be laid out against something, and that something was not the
+    label: the content came out magnified with a corner of a barcode on the paper and the
+    rest off the edge.
+
+    A label is a fixed physical thing. Fifty by thirty is what the roll is, so fifty by
+    thirty is what this says, and the printer's own paper setting should be made to match.
   */
-  @page { margin: 0; }
+  @page { size: ${LABEL_WIDTH_MM}mm ${LABEL_HEIGHT_MM}mm; margin: 0; }
   * { box-sizing: border-box; }
   /*
     No overflow rule on the page root. Clipping here looks harmless and is not: in paged
@@ -124,10 +127,13 @@ function wrap(body: string): string {
   */
   .label {
     /*
-      Sized by what is in it, not by a page it cannot see. A fixed height against a page of
-      unknown size is how content ends up half on one label and half on the next.
+      A real width, not a percentage: per cent is of whatever the layout happens to be, and
+      when that guess is wrong the label is composed at the wrong size and reaches the paper
+      magnified. No height, though — pinning it to the full page is what put the content
+      half on one label and half on the next.
     */
-    width: 100%;
+    width: ${LABEL_WIDTH_MM}mm;
+    max-height: ${LABEL_HEIGHT_MM}mm;
     padding: 1.2mm 2mm;
     display: flex;
     flex-direction: column;
