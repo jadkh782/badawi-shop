@@ -19,6 +19,13 @@ export interface PrintJob {
    * A browser only ever shows the dialog, so this changes nothing there.
    */
   destination?: 'receipt' | 'label' | 'ask';
+  /**
+   * The exact page, in millimetres, when the document has one.
+   *
+   * A label does: the die-cut stock decides it and nothing may override it. A receipt does
+   * not, being as long as the sale, so it is measured instead. Saying nothing means measure.
+   */
+  pageSizeMm?: { width: number; height: number };
 }
 
 /**

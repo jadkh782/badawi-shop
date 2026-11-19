@@ -23,6 +23,10 @@ contextBridge.exposeInMainWorld('badawiPrint', {
       title: String(job?.title ?? 'Receipt'),
       deviceName: job?.deviceName ? String(job.deviceName) : undefined,
       chooseDestination: Boolean(job?.chooseDestination),
+      pageSizeMm:
+        job?.pageSizeMm && job.pageSizeMm.width > 0 && job.pageSizeMm.height > 0
+          ? { width: Number(job.pageSizeMm.width), height: Number(job.pageSizeMm.height) }
+          : undefined,
     }),
 
   /** The printers this machine has, so the shop can choose rather than hope. */

@@ -7,6 +7,7 @@ interface DesktopBridge {
     title: string;
     deviceName?: string;
     chooseDestination?: boolean;
+    pageSizeMm?: { width: number; height: number };
   }): Promise<string>;
   listPrinters(): Promise<Array<{ name: string; description: string; isDefault: boolean }>>;
 }
@@ -94,6 +95,7 @@ export class DesktopReceiptPrinter implements IReceiptPrinter {
         title: job.title,
         ...(chosen ? { deviceName: chosen } : {}),
         ...(destination === 'ask' ? { chooseDestination: true } : {}),
+        ...(job.pageSizeMm ? { pageSizeMm: job.pageSizeMm } : {}),
       });
       return outcome === 'printed' || outcome === 'cancelled' ? outcome : 'unavailable';
     } catch {

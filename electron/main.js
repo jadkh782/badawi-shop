@@ -149,7 +149,18 @@ ipcMain.handle('badawi:print', async (_event, job) => {
       its size belongs to the paper, not to the content.
     */
     let pageSize;
-    if (!job.chooseDestination) {
+    if (job.pageSizeMm) {
+      /*
+        A document that knows its own page, which means a label: the die-cut stock decides
+        the size and nothing here may override it. This used to fall through to the receipt
+        branch below and every label was printed onto a 72mm page, so no amount of correcting
+        the stock in the Windows driver could ever have helped.
+      */
+      pageSize = {
+        width: Math.round(job.pageSizeMm.width * 1000),
+        height: Math.round(job.pageSizeMm.height * 1000),
+      };
+    } else if (!job.chooseDestination) {
       const heightPx = await worker.webContents.executeJavaScript(
         'Math.ceil(document.documentElement.scrollHeight)',
       );
