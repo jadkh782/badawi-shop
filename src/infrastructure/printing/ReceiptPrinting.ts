@@ -73,8 +73,8 @@ export class ReceiptPrinting {
     return this.printer.print({
       title: total === 1 ? 'Label' : `${total} labels`,
       html: LabelDocument.build(printable),
-      // No page size: the label printer's driver holds the stock, the orientation and the
-      // margins for the roll actually loaded, and anything sent from here would override it.
+      // The label printer, not the till printer: a different roll and a different page size,
+      // and the size itself is declared by the document rather than sent from here.
       destination: 'label',
       layoutWidthMm: LABEL_WIDTH_MM,
     });

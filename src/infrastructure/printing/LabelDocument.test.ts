@@ -12,19 +12,20 @@ const item = (over: Partial<LabelItem> = {}): LabelItem => ({
 describe('a shelf label', () => {
   it('states the page in millimetres, so nothing has to guess it', () => {
     /*
-      The driver holds the stock, the orientation and the margins for the roll physically
-      loaded. Declaring a size here fought all of it: the app said 50 by 30, the driver said
-      otherwise, and the content was rotated or clipped to reconcile the two. Saying nothing
-      means whatever is set in Printing Preferences is simply what happens.
+      A document that declares no size has to be laid out against something, and that
+      something is not the label: the content came out magnified, a corner of the barcode on
+      the paper and the rest off the edge. So the real figures are stated here, and they are
+      the ones a ruler gives for the roll — fifty-eight by thirty, not the fifty by thirty
+      this stock is commonly sold as.
     */
     const html = LabelDocument.build([item()]);
-    expect(html).toContain('size: 50mm 30mm');
-    expect(html).toContain('width: 50mm');
+    expect(html).toContain('size: 58mm 30mm');
+    expect(html).toContain('width: 58mm');
   });
 
   it('still knows the stock it was designed around', () => {
     // Kept for the on-screen copy that tells the shop what to set the driver to.
-    expect(LABEL_WIDTH_MM).toBe(50);
+    expect(LABEL_WIDTH_MM).toBe(58);
     expect(LABEL_HEIGHT_MM).toBe(30);
   });
 

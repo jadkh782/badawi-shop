@@ -8,7 +8,7 @@ import { code39Svg, ean13Svg } from './barcodeSvg';
  * walks down the roll a fraction at a time, and twenty labels later the print is across the
  * gap. The printer's own driver must be set to the same figures.
  */
-export const LABEL_WIDTH_MM = 50;
+export const LABEL_WIDTH_MM = 58;
 export const LABEL_HEIGHT_MM = 30;
 
 export interface LabelItem {
@@ -22,8 +22,8 @@ export interface LabelItem {
 /**
  * Shelf labels, one article to a label.
  *
- * Fifty by thirty millimetres is not much room, and the barcode is the part that cannot be
- * compromised: a name squeezed to fit is still readable, a barcode squeezed to fit does not
+ * Fifty-eight by thirty millimetres is not much room, and the barcode is the part that cannot
+ * be compromised: a name squeezed to fit is still readable, a barcode squeezed to fit does not
  * scan and the label is worthless. So the barcode gets the middle of the label at a fixed
  * height, and the name takes whatever is left above it, clipped at two lines.
  *
@@ -101,8 +101,11 @@ function wrap(body: string): string {
     label: the content came out magnified with a corner of a barcode on the paper and the
     rest off the edge.
 
-    A label is a fixed physical thing. Fifty by thirty is what the roll is, so fifty by
-    thirty is what this says, and the printer's own paper setting should be made to match.
+    A label is a fixed physical thing, so the figures here are the ones a ruler gives for the
+    stock on the roll: fifty-eight by thirty. They were fifty by thirty, which is the size
+    this kind of label is usually sold as and is not the size of this one, and eight
+    millimetres of missing width is enough to compose the whole label too small and leave it
+    sitting off to one side of the paper. The printer's own paper setting must say the same.
   */
   @page { size: ${LABEL_WIDTH_MM}mm ${LABEL_HEIGHT_MM}mm; margin: 0; }
   * { box-sizing: border-box; }
@@ -121,9 +124,9 @@ function wrap(body: string): string {
   /*
     A hair under the page, never exactly it.
 
-    The page is 50x30 and so was this, and a driver whose printable area rounds down by a
+    The box was once the page exactly, and a driver whose printable area rounds down by a
     fraction of a millimetre then pushed the content onto a second page: one blank label, one
-    printed. Half a millimetre of slack costs nothing visible and cannot overflow.
+    printed. The padding below is what keeps it clear of that edge.
   */
   .label {
     /*
