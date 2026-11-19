@@ -93,10 +93,15 @@ function wrap(body: string): string {
 <title>Labels</title>
 <style>
   /*
-    Sized to the stock, exactly. Unlike a receipt, a label has a real page size: the roll
-    decides it, and the page has to agree or the print walks off the label.
+    No page size here, deliberately.
+
+    The driver knows the label: its stock setting, its orientation and its margins are all
+    configured against the roll that is physically loaded. Declaring a size here fought all
+    of that — the app said 50 by 30 and the driver said something else, and the content was
+    rotated or clipped to reconcile them. Whatever is set in Printing Preferences now simply
+    happens, which also means a different roll needs no change in here.
   */
-  @page { size: ${LABEL_WIDTH_MM}mm ${LABEL_HEIGHT_MM}mm; margin: 0; }
+  @page { margin: 0; }
   * { box-sizing: border-box; }
   /*
     No overflow rule on the page root. Clipping here looks harmless and is not: in paged
@@ -119,18 +124,15 @@ function wrap(body: string): string {
   */
   .label {
     /*
-      Narrower than the label on purpose. A driver reserves a little at each edge — the
-      exposed liner setting alone can take two millimetres a side — and content laid out to
-      the full width is then clipped or bumped onto a page of its own.
+      Sized by what is in it, not by a page it cannot see. A fixed height against a page of
+      unknown size is how content ends up half on one label and half on the next.
     */
-    width: ${LABEL_WIDTH_MM - 2}mm;
-    margin: 0 auto;
-    height: ${LABEL_HEIGHT_MM - 0.6}mm;
-    padding: 1.2mm 1.5mm;
+    width: 100%;
+    padding: 1.2mm 2mm;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: space-between;
+    gap: 0.6mm;
     overflow: hidden;
     break-inside: avoid;
     page-break-inside: avoid;

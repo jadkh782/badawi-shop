@@ -137,30 +137,17 @@ ipcMain.handle('badawi:print', async (_event, job) => {
     await worker.loadFile(scratch);
 
     /*
-      How long the paper needs to be.
+      Only a receipt gets a page size from here.
 
-      A receipt has no natural page length: it is as long as the sale. Left unsaid, the
-      printer uses whatever its driver has configured, which on a roll printer is enormous,
-      and a four-line receipt comes out on half a metre of paper. So the finished document is
-      measured and the printer told exactly, which is the one number that cannot be worked
-      out ahead of time.
-
-      Skipped when the shop is choosing a destination, since that is the A4 scan sheet and
-      its size belongs to the paper, not to the content.
+      A label has a real one — the die-cut stock — and the printer driver already knows it,
+      along with the orientation and the margins for the roll that is physically loaded.
+      Sending a size of our own fought that and the content came out rotated or clipped. A
+      receipt is the opposite case: it is as long as the sale, so nothing but this knows how
+      long the page should be, and leaving it unsaid gives a short receipt on half a metre
+      of paper.
     */
     let pageSize;
-    if (job.pageSizeMm) {
-      /*
-        A document that knows its own page, which means a label: the die-cut stock decides
-        the size and nothing here may override it. This used to fall through to the receipt
-        branch below and every label was printed onto a 72mm page, so no amount of correcting
-        the stock in the Windows driver could ever have helped.
-      */
-      pageSize = {
-        width: Math.round(job.pageSizeMm.width * 1000),
-        height: Math.round(job.pageSizeMm.height * 1000),
-      };
-    } else if (!job.chooseDestination) {
+    if (job.destination === 'receipt' || !job.destination) {
       const heightPx = await worker.webContents.executeJavaScript(
         'Math.ceil(document.documentElement.scrollHeight)',
       );

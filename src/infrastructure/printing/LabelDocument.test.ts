@@ -10,11 +10,22 @@ const item = (over: Partial<LabelItem> = {}): LabelItem => ({
 });
 
 describe('a shelf label', () => {
-  it('is cut to the stock the shop runs', () => {
-    // 50 x 30mm die-cut. A page even slightly off walks down the roll and lands on the gap.
+  it('leaves the page to the printer driver', () => {
+    /*
+      The driver holds the stock, the orientation and the margins for the roll physically
+      loaded. Declaring a size here fought all of it: the app said 50 by 30, the driver said
+      otherwise, and the content was rotated or clipped to reconcile the two. Saying nothing
+      means whatever is set in Printing Preferences is simply what happens.
+    */
+    const html = LabelDocument.build([item()]);
+    expect(html).toContain('@page { margin: 0; }');
+    expect(html).not.toMatch(/@page[^}]*size:/);
+  });
+
+  it('still knows the stock it was designed around', () => {
+    // Kept for the on-screen copy that tells the shop what to set the driver to.
     expect(LABEL_WIDTH_MM).toBe(50);
     expect(LABEL_HEIGHT_MM).toBe(30);
-    expect(LabelDocument.build([item()])).toContain('size: 50mm 30mm');
   });
 
   it('carries the name, the price and the barcode', () => {
@@ -37,21 +48,23 @@ describe('a shelf label', () => {
   });
 });
 
-describe('fitting the page without spilling over it', () => {
-  it('leaves the label box a hair under the page', () => {
-    /*
-      The bug this exists for. The box was exactly 50x30 on a 50x30 page, and a driver whose
-      printable area rounded down by a fraction pushed the content onto a second page: one
-      blank label out of the printer, one printed.
-    */
+describe('fitting whatever page it is given', () => {
+  it('fixes no height, so it cannot land half on the next label', () => {
+    // A fixed height against a page of unknown size is exactly how content ends up split
+    // across two labels, which is what the shop saw.
     const html = LabelDocument.build([item()]);
-    expect(html).toContain('size: 50mm 30mm');
-    expect(html).toContain(`height: ${LABEL_HEIGHT_MM - 0.6}mm`);
-    expect(html).not.toContain(`height: ${LABEL_HEIGHT_MM}mm;`);
+    expect(html).not.toMatch(/\.label\s*\{[^}]*height:/);
+    expect(html).toContain('width: 100%');
   });
 
-  it('clips anything that would still reach past the page', () => {
-    expect(LabelDocument.build([item()])).toContain('overflow: hidden');
+  it('keeps clear of the edges the driver reserves', () => {
+    // The exposed liner setting alone can take two millimetres a side.
+    expect(LabelDocument.build([item()])).toContain('padding: 1.2mm 2mm');
+  });
+
+  it('does not clip at the root, which prints blank paper', () => {
+    const html = LabelDocument.build([item()]);
+    expect(html).not.toMatch(/html,\s*body\s*\{[^}]*overflow:\s*hidden/);
   });
 });
 

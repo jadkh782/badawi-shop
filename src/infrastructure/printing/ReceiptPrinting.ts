@@ -2,12 +2,7 @@ import { DiscountFactory, type Product, type Sale, type ShopSettings } from '@/d
 import type { IReceiptPrinter, PrintOutcome } from '@/application/ports';
 import { ReceiptDocument } from './ReceiptDocument';
 import { ScanSheetDocument } from './ScanSheetDocument';
-import {
-  LABEL_HEIGHT_MM,
-  LABEL_WIDTH_MM,
-  LabelDocument,
-  type LabelItem,
-} from './LabelDocument';
+import { LabelDocument, type LabelItem } from './LabelDocument';
 import type { ReceiptLine, ReceiptPayload } from './receiptTypes';
 
 export interface ReceiptOptions {
@@ -77,10 +72,9 @@ export class ReceiptPrinting {
     return this.printer.print({
       title: total === 1 ? 'Label' : `${total} labels`,
       html: LabelDocument.build(printable),
+      // No page size: the label printer's driver holds the stock, the orientation and the
+      // margins for the roll actually loaded, and anything sent from here would override it.
       destination: 'label',
-      // The stock decides this, so it is stated rather than measured. Measuring is for
-      // receipts, whose length is the sale's rather than the paper's.
-      pageSizeMm: { width: LABEL_WIDTH_MM, height: LABEL_HEIGHT_MM },
     });
   }
 

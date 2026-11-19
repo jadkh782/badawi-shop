@@ -7,7 +7,7 @@ interface DesktopBridge {
     title: string;
     deviceName?: string;
     chooseDestination?: boolean;
-    pageSizeMm?: { width: number; height: number };
+    destination?: string;
   }): Promise<string>;
   listPrinters(): Promise<Array<{ name: string; description: string; isDefault: boolean }>>;
 }
@@ -95,7 +95,8 @@ export class DesktopReceiptPrinter implements IReceiptPrinter {
         title: job.title,
         ...(chosen ? { deviceName: chosen } : {}),
         ...(destination === 'ask' ? { chooseDestination: true } : {}),
-        ...(job.pageSizeMm ? { pageSizeMm: job.pageSizeMm } : {}),
+        // Named so the till app knows which of the three documents this is.
+        destination,
       });
       return outcome === 'printed' || outcome === 'cancelled' ? outcome : 'unavailable';
     } catch {
