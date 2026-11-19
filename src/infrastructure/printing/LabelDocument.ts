@@ -98,7 +98,12 @@ function wrap(body: string): string {
   */
   @page { size: ${LABEL_WIDTH_MM}mm ${LABEL_HEIGHT_MM}mm; margin: 0; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #fff; color: #000; overflow: hidden; }
+  /*
+    No overflow rule on the page root. Clipping here looks harmless and is not: in paged
+    media a hidden root can suppress the printed content altogether, and the printer hands
+    over blank paper. Clipping belongs on the label box, which is below.
+  */
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-print-color-adjust: exact;
@@ -113,7 +118,13 @@ function wrap(body: string): string {
     printed. Half a millimetre of slack costs nothing visible and cannot overflow.
   */
   .label {
-    width: 100%;
+    /*
+      Narrower than the label on purpose. A driver reserves a little at each edge — the
+      exposed liner setting alone can take two millimetres a side — and content laid out to
+      the full width is then clipped or bumped onto a page of its own.
+    */
+    width: ${LABEL_WIDTH_MM - 2}mm;
+    margin: 0 auto;
     height: ${LABEL_HEIGHT_MM - 0.6}mm;
     padding: 1.2mm 1.5mm;
     display: flex;
