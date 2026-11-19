@@ -20,6 +20,22 @@ export interface PrintJob {
    */
   destination?: 'receipt' | 'label' | 'ask';
   /**
+   * The paper this belongs on, in millimetres, where the app is the one that knows it.
+   *
+   * A die-cut label is that case: its size is a physical fact, and the document is composed
+   * around it. Saying it in the document's CSS is not enough for the till app, because
+   * Electron's print does not read `@page` at all — it takes the page from the printer's
+   * stored settings. Left unsaid, a 58 by 30 label was laid out on a Letter sheet (measured:
+   * 279.4 by 215.9) with the label in one corner, and since the printer advances one die-cut
+   * label per page, every label got a corner of that sheet and the rest came out blank. A
+   * browser never had the problem, because window.print does honour `@page`.
+   *
+   * A receipt leaves this unset: its length is measured from the finished document rather
+   * than known beforehand. So does the A4 scan sheet, which goes through the dialog where
+   * the paper is the operator's to choose.
+   */
+  pageSizeMm?: { widthMm: number; heightMm: number };
+  /**
    * How wide to lay the document out, in millimetres, when printing through a browser.
    *
    * Not a page size and never sent to a printer: it is the width of the hidden frame the

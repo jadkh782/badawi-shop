@@ -2,7 +2,12 @@ import { DiscountFactory, type Product, type Sale, type ShopSettings } from '@/d
 import type { IReceiptPrinter, PrintOutcome } from '@/application/ports';
 import { ReceiptDocument } from './ReceiptDocument';
 import { ScanSheetDocument } from './ScanSheetDocument';
-import { LABEL_WIDTH_MM, LabelDocument, type LabelItem } from './LabelDocument';
+import {
+  LABEL_HEIGHT_MM,
+  LABEL_WIDTH_MM,
+  LabelDocument,
+  type LabelItem,
+} from './LabelDocument';
 import type { ReceiptLine, ReceiptPayload } from './receiptTypes';
 
 export interface ReceiptOptions {
@@ -73,9 +78,10 @@ export class ReceiptPrinting {
     return this.printer.print({
       title: total === 1 ? 'Label' : `${total} labels`,
       html: LabelDocument.build(printable),
-      // The label printer, not the till printer: a different roll and a different page size,
-      // and the size itself is declared by the document rather than sent from here.
+      // The label printer, not the till printer: a different roll and a different page size.
       destination: 'label',
+      // Said out loud, because the till app cannot read it off the document.
+      pageSizeMm: { widthMm: LABEL_WIDTH_MM, heightMm: LABEL_HEIGHT_MM },
       layoutWidthMm: LABEL_WIDTH_MM,
     });
   }

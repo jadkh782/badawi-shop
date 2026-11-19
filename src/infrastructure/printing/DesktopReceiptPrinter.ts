@@ -8,6 +8,7 @@ interface DesktopBridge {
     deviceName?: string;
     chooseDestination?: boolean;
     destination?: string;
+    pageSizeMm?: { widthMm: number; heightMm: number };
   }): Promise<string>;
   listPrinters(): Promise<Array<{ name: string; description: string; isDefault: boolean }>>;
 }
@@ -95,6 +96,9 @@ export class DesktopReceiptPrinter implements IReceiptPrinter {
         title: job.title,
         ...(chosen ? { deviceName: chosen } : {}),
         ...(destination === 'ask' ? { chooseDestination: true } : {}),
+        // The paper, where the document is composed around a known one. Without it the till
+        // app falls back to the printer's stored page and a label prints blank.
+        ...(job.pageSizeMm ? { pageSizeMm: job.pageSizeMm } : {}),
         // Named so the till app knows which of the three documents this is.
         destination,
       });

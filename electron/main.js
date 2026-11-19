@@ -137,17 +137,33 @@ ipcMain.handle('badawi:print', async (_event, job) => {
     await worker.loadFile(scratch);
 
     /*
-      Only a receipt gets a page size from here.
+      What size of paper this is going onto.
 
-      A label has a real one — the die-cut stock — and the printer driver already knows it,
-      along with the orientation and the margins for the roll that is physically loaded.
-      Sending a size of our own fought that and the content came out rotated or clipped. A
-      receipt is the opposite case: it is as long as the sale, so nothing but this knows how
-      long the page should be, and leaving it unsaid gives a short receipt on half a metre
-      of paper.
+      It has to be said here. The document declares its own page in CSS, and this does not
+      read it: webContents.print takes the page from the printer's stored settings and
+      ignores @page entirely. That is the difference between the two builds, and it is why
+      the same label printed correctly from a phone and came out blank from the till —
+      window.print does honour @page, and this does not. Measured, a label document that
+      says fifty-eight by thirty was being paginated onto 279.4 by 215.9, a Letter sheet,
+      with the label in one corner of it; the printer advances one die-cut label per page,
+      so each label got that corner and the rest of the roll came out empty.
+
+      Two cases, and a third that deliberately says nothing:
+
+        pageSizeMm  the app knows the paper — a die-cut label — and passes it through.
+        receipt     no natural length: it is as long as the sale, so the finished document
+                    is measured here. Left unsaid, a four-line receipt comes out on half a
+                    metre of roll.
+        ask         the A4 scan sheet, where the paper belongs to the dialog.
     */
     let pageSize;
-    if (job.destination === 'receipt' || !job.destination) {
+    if (job.pageSizeMm) {
+      // Millimetres on the way in, microns on the way out.
+      pageSize = {
+        width: Math.round(job.pageSizeMm.widthMm * 1000),
+        height: Math.round(job.pageSizeMm.heightMm * 1000),
+      };
+    } else if (job.destination === 'receipt' || !job.destination) {
       const heightPx = await worker.webContents.executeJavaScript(
         'Math.ceil(document.documentElement.scrollHeight)',
       );

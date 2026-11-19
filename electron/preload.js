@@ -24,6 +24,16 @@ contextBridge.exposeInMainWorld('badawiPrint', {
       deviceName: job?.deviceName ? String(job.deviceName) : undefined,
       chooseDestination: Boolean(job?.chooseDestination),
       destination: job?.destination ? String(job.destination) : 'receipt',
+      // Two finite millimetre figures or nothing at all. The page arrives over the network,
+      // so what it hands over is checked here rather than trusted in the main process.
+      pageSizeMm:
+        Number.isFinite(Number(job?.pageSizeMm?.widthMm)) &&
+        Number.isFinite(Number(job?.pageSizeMm?.heightMm))
+          ? {
+              widthMm: Number(job.pageSizeMm.widthMm),
+              heightMm: Number(job.pageSizeMm.heightMm),
+            }
+          : undefined,
     }),
 
   /** The printers this machine has, so the shop can choose rather than hope. */
